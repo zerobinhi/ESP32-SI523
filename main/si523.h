@@ -220,6 +220,8 @@ void I_SI523_SiModifyReg(unsigned char RegAddr, unsigned char ModifyVal, unsigne
 #define ACDConfigO 0x0e
 #define ACDConfigP 0x0f
 
+esp_err_t si523_write_reg(uint8_t reg, uint8_t data);
+uint8_t si523_read_reg(uint8_t reg);
 void si523_gpio_init(void);
 void ACD_init_Fun(void);
 void ACD_Fun(void);

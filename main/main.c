@@ -93,20 +93,50 @@ void si523_task(void *arg)
     {
         if (xSemaphoreTake(si523_semaphore, portMAX_DELAY) == pdTRUE)
         {
-            // if (1 == PCD_IRQ_flagA) // IRQ pin脚中断检测有中断信号产生
-            // {
-            //     ESP_LOGI(TAG, "PCD_IRQ_flagA is set, processing interrupt...");
-            //     PCD_IRQ_flagA = 0;
-            //     pcd_acd_application();
-            //     ESP_LOGI(TAG, "1");
-            //     PCD_SI522A_TypeA_Init(); // Reader模式的初始化
-            //     ESP_LOGI(TAG, "2");
-            //     PCD_ACD_Start();         // 初始化ACD配置寄存器，并且进入ACD模式
-            //     ESP_LOGI(TAG, "3");
-            // }
 
-            // PCD_SI522A_TypeA_GetUID();
-            vTaskDelay(pdMS_TO_TICKS(100));
+            if (PCD_IRQ_flagA)
+            {
+                ESP_LOGI(TAG, "PCD_IRQ_flagA");
+                // EXTI->IMR &= 0xFFFFFFF7; // Disable external interrupt
+                gpio_intr_disable(SI523_INT_PIN); // Disable GPIO interrupt
+
+                switch (PCD_IRQ())
+                {
+                case 0: // Other_IRQ
+                    ESP_LOGI(TAG, "Other_IRQ:Read UID and reconfigure the register");
+                    // ESP_LOGI(TAG, "Other IRQ Occur");
+                    PCD_SI523_TypeA_GetUID();
+                    PcdReset(); // 软复位
+                    // Pcd_Hard_Reset(); // 硬复位
+                    PCD_SI523_TypeA_Init();
+                    PCD_ACD_Init();
+                    break;
+
+                case 1: // ACD_IRQ
+                    ESP_LOGI(TAG, "ACD_IRQ:Read UID and reconfigure the register");
+                    I_SI523_SiModifyReg(0x01, 0, 0x20); // Turn on the analog part of receiver
+                    PCD_SI523_TypeA_GetUID();
+                    si523_write_reg(CommandReg, 0xb0); // 进入软掉电,重新进入ACD（ALPPL）
+                    break;
+
+                case 2: // ACDTIMER_IRQ
+                    ESP_LOGI(TAG, "ACDTIMER_IRQ:Reconfigure the register");
+                    PcdReset(); // 软复位
+                    // Pcd_Hard_Reset(); // 硬复位
+                    PCD_SI523_TypeA_Init();
+                    PCD_ACD_Init();
+                    break;
+                }
+
+                // EXTI->IMR |= 0x00000008; // Enable external interrupt
+                gpio_intr_enable(SI523_INT_PIN); // Enable GPIO interrupt
+                PCD_IRQ_flagA = 0;
+            }
+            else
+            {
+                // delay_ms(500);
+                vTaskDelay(pdMS_TO_TICKS(500));
+            }
         }
     }
 }
