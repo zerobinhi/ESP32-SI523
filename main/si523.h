@@ -12,6 +12,7 @@
 
 // -------------------------- 外部变量声明 --------------------------
 extern i2c_master_dev_handle_t si523_handle;
+extern i2c_master_bus_handle_t i2c_bus_handle;
 
 //********************************************//
 // RST定义
@@ -28,36 +29,25 @@ extern i2c_master_dev_handle_t si523_handle;
 #define I2C_MASTER_NUM I2C_NUM_0
 #define I2C_MASTER_SCL_IO 18
 #define I2C_MASTER_SDA_IO 19
-#define I2C_MASTER_FREQ_HZ 40000
+#define I2C_MASTER_FREQ_HZ 10000
 #define SI523_I2C_ADDR 0x28
 
 #define RFCfgReg_Val 0x68
-#define DivIEnReg_Val 0xc0
+#define DivIEnReg_Val 0xC0
 #define ComIEnReg_Val 0x80
 #define IRQMODE 0x01
 #define EXTI_Trigger_Mode 0x0C
 #define ACDConfigRegA_Val 0x02
-#define ACDConfigRegB_Val 0xA8 // 0x68
-#define ACDConfigRegD_Val 0x08
-#define ACDConfigRegH_Val 0xFF
+#define ACDConfigRegB_Val 0xA8
+#define ACDConfigRegD_Val 0x02
+#define ACDConfigRegH_Val 0x26
 #define ACDConfigRegI_Val 0x00
-#define ACDConfigRegJ_Val 0x44
+#define ACDConfigRegJ_Val 0x55
 #define ACDConfigRegM_Val 0x01
-#define ACDConfigRegO_Val 0x0A
-
-#define PICC_CID 0x00 // 0~14 随意指定
-
-#define BIT7 0X80
-#define BIT6 0X40
-#define BIT5 0X20
-#define BIT4 0X10
-#define BIT3 0X08
-#define BIT2 0X04
-#define BIT1 0X02
-#define BIT0 0X01
+#define ACDConfigRegO_Val 0x00
 
 //********************************************//
-// Si522A寄存器定义
+// MF522寄存器定义
 //********************************************//
 // Page 0: Command and status
 #define RFU00 0x00
@@ -88,7 +78,7 @@ extern i2c_master_dev_handle_t si523_handle;
 #define RxSelReg 0x17
 #define RxThresholdReg 0x18
 #define DemodReg 0x19
-#define Fel1Reg 0x1A
+#define RFU1A 0x1A
 #define RFU1B 0x1B
 #define MfTxReg 0x1C
 #define MfRxReg 0x1D
@@ -149,66 +139,6 @@ extern i2c_master_dev_handle_t si523_handle;
 #define MI_NOTAGERR 1
 #define MI_ERR 2
 
-#define MI_CHK_FAILED (2)
-#define MI_CRCERR (2)
-#define MI_CHK_COMPERR (2)
-#define MI_EMPTY (3)
-#define MI_AUTHERR (4)
-#define MI_PARITYERR (5)
-#define MI_CODEERR (6)
-#define MI_SERNRERR (8)
-#define MI_KEYERR (9)
-#define MI_NOTAUTHERR (10)
-#define MI_BITCOUNTERR (11)
-#define MI_BYTECOUNTERR (12)
-#define MI_IDLE (13)
-#define MI_TRANSERR (14)
-#define MI_WRITEERR (15)
-#define MI_INCRERR (16)
-#define MI_DECRERR (17)
-#define MI_READERR (18)
-#define MI_OVFLERR (19)
-#define MI_POLLING (20)
-#define MI_FRAMINGERR (21)
-#define MI_ACCESSERR (22)
-#define MI_UNKNOWN_COMMAND (23)
-#define MI_COLLERR (24)
-#define MI_RESETERR (25)
-#define MI_INITERR (25)
-#define MI_INTERFACEERR (26)
-#define MI_ACCESSTIMEOUT (27)
-#define MI_NOBITWISEANTICOLL (28)
-#define MI_QUIT (30)
-#define MI_INTEGRITY_ERR (35) // 完整性错误(crc/parity/protocol)
-#define MI_RECBUF_OVERFLOW (50)
-#define MI_SENDBYTENR (51)
-#define MI_SENDBUF_OVERFLOW (53)
-#define MI_BAUDRATE_NOT_SUPPORTED (54)
-#define MI_SAME_BAUDRATE_REQUIRED (55)
-#define MI_WRONG_PARAMETER_VALUE (60)
-#define MI_BREAK (99)
-#define MI_NY_IMPLEMENTED (100)
-#define MI_NO_MFRC (101)
-#define MI_MFRC_NOTAUTH (102)
-#define MI_WRONG_DES_MODE (103)
-#define MI_HOST_AUTH_FAILED (104)
-#define MI_WRONG_LOAD_MODE (106)
-#define MI_WRONG_DESKEY (107)
-#define MI_MKLOAD_FAILED (108)
-#define MI_FIFOERR (109)
-#define MI_WRONG_ADDR (110)
-#define MI_DESKEYLOAD_FAILED (111)
-#define MI_WRONG_SEL_CNT (114)
-#define MI_WRONG_TEST_MODE (117)
-#define MI_TEST_FAILED (118)
-#define MI_TOC_ERROR (119)
-#define MI_COMM_ABORT (120)
-#define MI_INVALID_BASE (121)
-#define MI_MFRC_RESET (122)
-#define MI_WRONG_VALUE (123)
-#define MI_VALERR (124)
-#define MI_COM_ERR (125)
-#define PROTOCOL_ERR (126)
 /////////////////////////////////////////////////////////////////////
 // MF522 FIFO长度定义
 /////////////////////////////////////////////////////////////////////
@@ -253,23 +183,26 @@ char PcdWrite(unsigned char ucAddr, unsigned char *pData);
 char PcdRead(unsigned char ucAddr, unsigned char *pData);
 
 //***********************************//修改新增内容
-void TestADC_G(void);
-void PCD_SI522A_TypeA_Init(void); // 读A卡初始化
-void PCD_SI522A_TypeA(void);
-char PCD_SI522A_TypeA_GetUID(void);   // 读A卡
-char PCD_SI522A_TypeA_rw_block(void); // 读A卡扇区
+
+void PCD_SI523_TypeA_Init(void);          // 读A卡初始化
+char PCD_SI523_TypeA_GetUID(void);        // 读A卡
+char PCD_SI523_TypeA_rw_block(void);      // 读A卡扇区
+void PCD_SI523_TypeB_Init(void);          // 读B卡初始化
+char PCD_SI523_TypeB_GetUID(void);        // 读B卡
+char PCD_SI523_IdentityCard_GetUID(void); // 读身份证
+
+void PCD_SI523_TypeA(void);
+void PCD_SI523_TypeB(void);
 
 //***********************************//修改新增内容
 
-void PcdReset(void);
-void Pcd_Hard_Reset(void);
-void PcdConfigISOType(unsigned char type);
-void M500PcdConfigISOTypeA(void);
-void I_SI522A_ClearBitMask(unsigned char reg, unsigned char mask);
-void I_SI522A_SetBitMask(unsigned char reg, unsigned char mask);
-void I_SI522A_SiModifyReg(unsigned char RegAddr, unsigned char ModifyVal, unsigned char MaskByte);
+void PcdReset(void);       // 软复位
+void Pcd_Hard_Reset(void); // 硬复位
 
-//
+void I_SI523_ClearBitMask(unsigned char reg, unsigned char mask);
+void I_SI523_SetBitMask(unsigned char reg, unsigned char mask);
+void I_SI523_SiModifyReg(unsigned char RegAddr, unsigned char ModifyVal, unsigned char MaskByte);
+
 #define ACDConfigA 0x00
 #define ACDConfigB 0x01
 #define ACDConfigC 0x02
@@ -287,20 +220,11 @@ void I_SI522A_SiModifyReg(unsigned char RegAddr, unsigned char ModifyVal, unsign
 #define ACDConfigO 0x0e
 #define ACDConfigP 0x0f
 
-esp_err_t si523_write_reg(uint8_t reg, uint8_t data);
-uint8_t si523_read_reg(uint8_t reg);
-
+void si523_gpio_init(void);
 void ACD_init_Fun(void);
 void ACD_Fun(void);
 void PCD_ACD_AutoCalc(void);
-void PCD_ACD_Start(void);
+void PCD_ACD_Init(void);
 char PCD_IRQ(void);
-
-void pcd_acd_end(void);
-void Card_Check(void);
-unsigned char ComReqA(unsigned char rw, unsigned char Block);
-unsigned char ComReqB(void);
-void pcd_acd_application(void);
-void si523_gpio_init();
 
 #endif // SI523_H

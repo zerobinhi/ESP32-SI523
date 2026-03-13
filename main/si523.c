@@ -3,42 +3,27 @@
 
 static const char *TAG = "si523";
 
-unsigned char aaa = 0;
-
 extern uint8_t PCD_IRQ_flagA;
 unsigned char ACDConfigRegK_Val;
 unsigned char ACDConfigRegC_Val;
-unsigned char flag_read_ic_ok;
 
-#define READ 0
-#define WRITE 1
-
-unsigned char ATQA[2] = {0}; // 卡类型
-unsigned char UIDB[10];      // 放置B 卡ID
-unsigned char UIDA[10];      // 放置A 卡ID
-unsigned char SAK = 0;
-unsigned char CardReadBuf[16] = {0};
-unsigned char CardWriteBuf[16] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
-unsigned char DefaultKeyABuf[10] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-
-// -------------------------- 静态辅助函数 --------------------------
 esp_err_t si523_write_reg(uint8_t reg, uint8_t data)
 {
-    // i2c_master_transmit_multi_buffer_info_t buffers[2] = {
-    //     {.write_buffer = &reg, .buffer_size = 1},
-    //     {.write_buffer = &data, .buffer_size = 1},
-    // };
-    // esp_err_t err = i2c_master_multi_buffer_transmit(si523_handle, buffers, 2, portMAX_DELAY);
-    // if (err != ESP_OK)
-    // {
-    //     ESP_LOGE(TAG, "Write reg 0x%02X failed", reg);
-    // }
-    // return err;
-    uint8_t buf[2] = {reg, data};
-    esp_err_t err = i2c_master_transmit(si523_handle, buf, 2, portMAX_DELAY);
+    i2c_master_transmit_multi_buffer_info_t buffers[2] = {
+        {.write_buffer = &reg, .buffer_size = 1},
+        {.write_buffer = &data, .buffer_size = 1},
+    };
+    esp_err_t err = i2c_master_multi_buffer_transmit(si523_handle, buffers, 2, portMAX_DELAY);
     if (err != ESP_OK)
+    {
         ESP_LOGE(TAG, "Write reg 0x%02X failed", reg);
+    }
     return err;
+    // uint8_t buf[2] = {reg, data};
+    // esp_err_t err = i2c_master_transmit(si523_handle, buf, 2, portMAX_DELAY);
+    // if (err != ESP_OK)
+    //     ESP_LOGE(TAG, "Write reg 0x%02X failed", reg);
+    // return err;
 }
 
 uint8_t si523_read_reg(uint8_t reg)
@@ -48,14 +33,17 @@ uint8_t si523_read_reg(uint8_t reg)
     return data;
 }
 
-static void si523_set_bit_mask(uint8_t reg, uint8_t mask)
+void si523_gpio_init(void)
 {
-    si523_write_reg(reg, si523_read_reg(reg) | mask);
-}
-
-static void si523_clear_bit_mask(uint8_t reg, uint8_t mask)
-{
-    si523_write_reg(reg, si523_read_reg(reg) & (~mask));
+    // 配置RST引脚为输出，并设置初始状态为高电平
+    gpio_config_t rst_conf = {
+        .intr_type = GPIO_INTR_DISABLE,
+        .mode = GPIO_MODE_OUTPUT,
+        .pin_bit_mask = (1ULL << SI523_RST_PIN),
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+    };
+    gpio_config(&rst_conf);
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -64,25 +52,20 @@ static void si523_clear_bit_mask(uint8_t reg, uint8_t mask)
 /////////////////////////////////////////////////////////////////////
 void PcdAntennaOn(void)
 {
-
-    //   unsigned char i;
-    //	GPIO_WriteBit(GPIOA,GPIO_Pin_2,Bit_SET);    //RST保持为高，才能开启天线！
-    //    i = si523_read_reg(TxControlReg);
-    //    if (!(i & 0x03))
-    //    {
-    //        I_SI522A_SetBitMask(TxControlReg, 0x03);
-    //    }
-    //
-    si523_write_reg(TxControlReg, si523_read_reg(TxControlReg) | 0x03); // Tx1RFEn=1  Tx2RFEn=1
-    vTaskDelay(pdMS_TO_TICKS(1));                                       // 这里加一个小延时，会好一点！
+    unsigned char i;
+    i = si523_read_reg(TxControlReg);
+    if (!(i & 0x03))
+    {
+        I_SI523_SetBitMask(TxControlReg, 0x03);
+    }
 }
+
 /////////////////////////////////////////////////////////////////////
 // 关闭天线
 /////////////////////////////////////////////////////////////////////
 void PcdAntennaOff(void)
 {
-    //	I_SI522A_ClearBitMask(TxControlReg, 0x03);          //新增
-    si523_write_reg(TxControlReg, si523_read_reg(TxControlReg) & (~0x03));
+    I_SI523_ClearBitMask(TxControlReg, 0x03);
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -91,9 +74,9 @@ void PcdAntennaOff(void)
 void CalulateCRC(unsigned char *pIndata, unsigned char len, unsigned char *pOutData)
 {
     unsigned char i, n;
-    I_SI522A_ClearBitMask(DivIrqReg, 0x04);
+    I_SI523_ClearBitMask(DivIrqReg, 0x04);
     si523_write_reg(CommandReg, PCD_IDLE);
-    I_SI522A_SetBitMask(FIFOLevelReg, 0x80);
+    I_SI523_SetBitMask(FIFOLevelReg, 0x80);
     for (i = 0; i < len; i++)
     {
         si523_write_reg(FIFODataReg, *(pIndata + i));
@@ -108,6 +91,9 @@ void CalulateCRC(unsigned char *pIndata, unsigned char len, unsigned char *pOutD
     pOutData[0] = si523_read_reg(CRCResultRegL);
     pOutData[1] = si523_read_reg(CRCResultRegH);
 }
+
+unsigned char aaa = 0;
+
 /////////////////////////////////////////////////////////////////////
 // 功    能：通过RC522和ISO14443卡通讯
 // 参数说明：Command[IN]:RC522命令字
@@ -143,11 +129,10 @@ char PcdComMF522(unsigned char Command,
         break;
     }
 
-    //    si523_write_reg(ComIEnReg,irqEn|0x80);
-    I_SI522A_ClearBitMask(ComIrqReg, 0x80);
+    // si523_write_reg(ComIEnReg,irqEn|0x80);
+    I_SI523_ClearBitMask(ComIrqReg, 0x80);
     si523_write_reg(CommandReg, PCD_IDLE);
-    vTaskDelay(pdMS_TO_TICKS(1));
-    I_SI522A_SetBitMask(FIFOLevelReg, 0x80);
+    I_SI523_SetBitMask(FIFOLevelReg, 0x80);
 
     for (i = 0; i < InLenByte; i++)
     {
@@ -157,7 +142,7 @@ char PcdComMF522(unsigned char Command,
 
     if (Command == PCD_TRANSCEIVE)
     {
-        I_SI522A_SetBitMask(BitFramingReg, 0x80);
+        I_SI523_SetBitMask(BitFramingReg, 0x80);
     }
 
     // i = 600;//根据时钟频率调整，操作M1卡最大等待时间25ms
@@ -167,11 +152,11 @@ char PcdComMF522(unsigned char Command,
         n = si523_read_reg(ComIrqReg);
         i--;
     } while ((i != 0) && !(n & 0x01) && !(n & waitFor));
-    I_SI522A_ClearBitMask(BitFramingReg, 0x80);
+    I_SI523_ClearBitMask(BitFramingReg, 0x80);
 
     if (i != 0)
     {
-        //	aaa = si523_read_reg(ErrorReg);
+        aaa = si523_read_reg(ErrorReg);
 
         if (!(si523_read_reg(ErrorReg) & 0x1B))
         {
@@ -212,7 +197,7 @@ char PcdComMF522(unsigned char Command,
         }
     }
 
-    I_SI522A_SetBitMask(ControlReg, 0x80); // stop timer now
+    I_SI523_SetBitMask(ControlReg, 0x80); // stop timer now
     si523_write_reg(CommandReg, PCD_IDLE);
     return status;
 }
@@ -236,14 +221,13 @@ char PcdRequest(unsigned char req_code, unsigned char *pTagType)
     unsigned int unLen;
     unsigned char ucComMF522Buf[MAXRLEN];
 
-    I_SI522A_ClearBitMask(Status2Reg, 0x08);
+    I_SI523_ClearBitMask(Status2Reg, 0x08);
     si523_write_reg(BitFramingReg, 0x07);
-    I_SI522A_SetBitMask(TxControlReg, 0x03);
+    I_SI523_SetBitMask(TxControlReg, 0x03);
 
     ucComMF522Buf[0] = req_code;
 
     status = PcdComMF522(PCD_TRANSCEIVE, ucComMF522Buf, 1, ucComMF522Buf, &unLen);
-
     if ((status == MI_OK) && (unLen == 0x10))
     {
         *pTagType = ucComMF522Buf[0];
@@ -269,9 +253,9 @@ char PcdAnticoll(unsigned char *pSnr, unsigned char anticollision_level)
     unsigned int unLen;
     unsigned char ucComMF522Buf[MAXRLEN];
 
-    I_SI522A_ClearBitMask(Status2Reg, 0x08);
+    I_SI523_ClearBitMask(Status2Reg, 0x08);
     si523_write_reg(BitFramingReg, 0x00);
-    I_SI522A_ClearBitMask(CollReg, 0x80);
+    I_SI523_ClearBitMask(CollReg, 0x80);
 
     ucComMF522Buf[0] = anticollision_level;
     ucComMF522Buf[1] = 0x20;
@@ -291,7 +275,7 @@ char PcdAnticoll(unsigned char *pSnr, unsigned char anticollision_level)
         }
     }
 
-    I_SI522A_SetBitMask(CollReg, 0x80);
+    I_SI523_SetBitMask(CollReg, 0x80);
     return status;
 }
 
@@ -317,7 +301,7 @@ char PcdSelect(unsigned char *pSnr, unsigned char *sak)
     }
     CalulateCRC(ucComMF522Buf, 7, &ucComMF522Buf[7]);
 
-    I_SI522A_ClearBitMask(Status2Reg, 0x08);
+    I_SI523_ClearBitMask(Status2Reg, 0x08);
 
     status = PcdComMF522(PCD_TRANSCEIVE, ucComMF522Buf, 9, ucComMF522Buf, &unLen);
 
@@ -351,7 +335,7 @@ char PcdSelect1(unsigned char *pSnr, unsigned char *sak)
     }
     CalulateCRC(ucComMF522Buf, 7, &ucComMF522Buf[7]);
 
-    I_SI522A_ClearBitMask(Status2Reg, 0x08);
+    I_SI523_ClearBitMask(Status2Reg, 0x08);
 
     status = PcdComMF522(PCD_TRANSCEIVE, ucComMF522Buf, 9, ucComMF522Buf, &unLen);
 
@@ -385,7 +369,7 @@ char PcdSelect2(unsigned char *pSnr, unsigned char *sak)
     }
     CalulateCRC(ucComMF522Buf, 7, &ucComMF522Buf[7]);
 
-    I_SI522A_ClearBitMask(Status2Reg, 0x08);
+    I_SI523_ClearBitMask(Status2Reg, 0x08);
 
     status = PcdComMF522(PCD_TRANSCEIVE, ucComMF522Buf, 9, ucComMF522Buf, &unLen);
 
@@ -419,7 +403,7 @@ char PcdSelect3(unsigned char *pSnr, unsigned char *sak)
     }
     CalulateCRC(ucComMF522Buf, 7, &ucComMF522Buf[7]);
 
-    I_SI522A_ClearBitMask(Status2Reg, 0x08);
+    I_SI523_ClearBitMask(Status2Reg, 0x08);
 
     status = PcdComMF522(PCD_TRANSCEIVE, ucComMF522Buf, 9, ucComMF522Buf, &unLen);
 
@@ -552,169 +536,58 @@ char PcdWrite(unsigned char addr, unsigned char *pData)
     return status;
 }
 
-void PCD_SI522A_TypeA_Init(void)
-{
-    PcdReset();
-    PcdAntennaOff();
-    M500PcdConfigISOTypeA();
-}
+/*===============================
+ 函数功能：读A卡初始化配置
 
-void M500PcdConfigISOTypeA(void) // ISO1443A//A:NXP,B:MOTO
+ ================================*/
+void PCD_SI523_TypeA_Init(void)
 {
-    //	I_SI522A_ClearBitMask(Status2Reg,0x08); //清MFCrypto1On
-    //	si523_write_reg(ModeReg, 0x3D);	//3F 选择模式
-    //	si523_write_reg(RxSelReg,0x86); //84 内部接收设置
-    //	si523_write_reg(RFCfgReg,0x58); //4F 接收增益
-    //
-    //	si523_write_reg(TReloadRegL, 30);	//重装定时器值低位
-    //	si523_write_reg(TReloadRegH, 0);	//重装定时器值高位
-    //	si523_write_reg(TModeReg, 0x8D);	//跟随协议启动和停止
-    //	si523_write_reg(TPrescalerReg, 0x3E);	 //6.78/3390=0.002Mhz,(1/2)*30=15ms产生中断
 
-    I_SI522A_ClearBitMask(Status2Reg, BIT3); // 清MFCrypto1On
-    I_SI522A_SetBitMask(ComIEnReg, BIT7);    // 低电平触发中断
-    si523_write_reg(ModeReg, 0x3D);          // 和Mifare卡通讯，CRC初始值0x6363
-    si523_write_reg(RxSelReg, 0x86);         // RxWait,延迟RxWait个比特时间后激活接收机
-    si523_write_reg(RFCfgReg, 0x58);         // 接收增益,0x38 - 0x78,最大0x7F
-    si523_write_reg(TxASKReg, 0x40);         // typeA
-    si523_write_reg(TxModeReg, 0x00);        // Tx Framing A
-    si523_write_reg(RxModeReg, 0x00);        // Rx framing A
-    si523_write_reg(ControlReg, 0x10);
+    I_SI523_ClearBitMask(Status2Reg, 0x08);
+    // Reset baud rates
+    si523_write_reg(TxModeReg, 0x00);
+    si523_write_reg(RxModeReg, 0x00);
+    // Reset ModWidthReg
+    si523_write_reg(ModWidthReg, 0x26);
+    // RxGain:110,43dB by default;
+    si523_write_reg(RFCfgReg, RFCfgReg_Val);
+    // When communicating with a PICC we need a timeout if something goes wrong.
+    // f_timer = 13.56 MHz / (2*TPreScaler+1) where TPreScaler = [TPrescaler_Hi:TPrescaler_Lo].
+    // TPrescaler_Hi are the four low bits in TModeReg. TPrescaler_Lo is TPrescalerReg.
+    si523_write_reg(TModeReg, 0x80);      // TAuto=1; timer starts automatically at the end of the transmission in all communication modes at all speeds
+    si523_write_reg(TPrescalerReg, 0xa9); // TPreScaler = TModeReg[3..0]:TPrescalerReg
+    si523_write_reg(TReloadRegH, 0x03);   // Reload timer
+    si523_write_reg(TReloadRegL, 0xe8);   // Reload timer
+    si523_write_reg(TxASKReg, 0x40);      // Default 0x00. Force a 100 % ASK modulation independent of the ModGsPReg register setting
+    si523_write_reg(ModeReg, 0x3D);       // Default 0x3F. Set the preset value for the CRC coprocessor for the CalcCRC command to 0x6363 (ISO 14443-3 part 6.2.4)
+    si523_write_reg(CommandReg, 0x00);    // Turn on the analog part of receiver
 
     PcdAntennaOn();
-    vTaskDelay(pdMS_TO_TICKS(1));
-    // delay_us(400);
 }
 
-void PcdConfigISOType(unsigned char type)
+/*===============================
+ 函数功能：读A卡
+
+ ================================*/
+char PCD_SI523_TypeA_GetUID(void)
 {
-    //		GPIO_WriteBit(GPIOA,GPIO_Pin_2,Bit_SET);    //RST保持为高
-    //		I_SI522A_ClearBitMask(Status2Reg, 0x08);
-    //	// Reset baud rates
-    //	si523_write_reg(TxModeReg, 0x00);
-    //	si523_write_reg(RxModeReg, 0x00);
-    //	// Reset ModWidthReg
-    //	si523_write_reg(ModWidthReg, 0x26);
-    //	// RxGain:110,43dB by default;
-    //	si523_write_reg(RFCfgReg, RFCfgReg_Val);
-    //	// When communicating with a PICC we need a timeout if something goes wrong.
-    //	// f_timer = 13.56 MHz / (2*TPreScaler+1) where TPreScaler = [TPrescaler_Hi:TPrescaler_Lo].
-    //	// TPrescaler_Hi are the four low bits in TModeReg. TPrescaler_Lo is TPrescalerReg.
-    //	si523_write_reg(TModeReg, 0x80);// TAuto=1; timer starts automatically at the end of the transmission in all communication modes at all speeds
-    //	si523_write_reg(TPrescalerReg, 0xa9);// TPreScaler = TModeReg[3..0]:TPrescalerReg
-    //	si523_write_reg(TReloadRegH, 0x03); // Reload timer
-    //	si523_write_reg(TReloadRegL, 0xe8); // Reload timer
-    //	si523_write_reg(TxASKReg, 0x40);	// Default 0x00. Force a 100 % ASK modulation independent of the ModGsPReg register setting
-    //	si523_write_reg(ModeReg, 0x3D);	// Default 0x3F. Set the preset value for the CRC coprocessor for the CalcCRC command to 0x6363 (ISO 14443-3 part 6.2.4)
-
-    //	PcdAntennaOn();
-    //
-
-    CLR_NFC_RST;
-    // delay_us(500);
-    vTaskDelay(pdMS_TO_TICKS(1));
-    SET_NFC_RST;
-    // delay_us(500);
-    vTaskDelay(pdMS_TO_TICKS(1));
-    PcdAntennaOff();
-    // delay_us(500);
-    vTaskDelay(pdMS_TO_TICKS(1));
-
-    if ('A' == type)
-    {
-        I_SI522A_ClearBitMask(Status2Reg, BIT3); // 清MFCrypto1On
-        I_SI522A_SetBitMask(ComIEnReg, BIT7);    // 低电平触发中断
-        si523_write_reg(ModeReg, 0x3D);          // 和Mifare卡通讯，CRC初始值0x6363
-        si523_write_reg(RxSelReg, 0x86);         // RxWait,延迟RxWait个比特时间后激活接收机
-        si523_write_reg(RFCfgReg, 0x48);         // 接收增益,0x38 - 0x78,最大0x7F
-        si523_write_reg(TxASKReg, 0x40);         // typeA
-        si523_write_reg(TxModeReg, 0x00);        // Tx Framing A
-        si523_write_reg(RxModeReg, 0x00);        // Rx framing A
-        si523_write_reg(ControlReg, 0x10);
-        I_SI522A_SiModifyReg(0x01, 0, 0x20); // Turn on the analog part of receiver
-
-        //			si523_write_reg(RxSelReg,0x88); //延迟RxWait个比特，更长？
-        //			si523_write_reg(ModGsPReg,0x12);  //0x0F);//调制指数 P驱动电导
-    }
-    else if ('B' == type)
-    {
-        I_SI522A_ClearBitMask(Status2Reg, 0X08); // 清MFCrypto1On
-        I_SI522A_SetBitMask(ComIEnReg, 0X80);    // 低电平触发中断
-        si523_write_reg(ModeReg, 0x3F);          // CRC初始值0xFFFF
-        si523_write_reg(RxSelReg, 0x85);         // RxWait,延迟RxWait个比特时间后激活接收机
-        si523_write_reg(RFCfgReg, 0x58);         // 接收增益,0x38 - 0x78,最大0x7F
-        // 发射部分配置
-        si523_write_reg(GsNReg, 0xF8); // 调制系数
-        si523_write_reg(CWGsPReg, 0x3F);
-        si523_write_reg(ModGsPReg, 0x07);   // 调制系数
-        si523_write_reg(AutoTestReg, 0x00); // AmpRcv为1，接收内部信号处理过程是非线性的
-        si523_write_reg(TxASKReg, 0x00);    // typeB
-        si523_write_reg(TypeBReg, 0x13);
-        si523_write_reg(TxModeReg, 0x83);     // Tx Framing B
-        si523_write_reg(RxModeReg, 0x83);     // Rx framing B
-        si523_write_reg(BitFramingReg, 0x00); ////TxLastBits=0
-        si523_write_reg(ControlReg, 0x10);
-        I_SI522A_SiModifyReg(0x01, 0, 0x20); // Turn on the analog part of receiver
-                                             //	si523_write_reg(RxThresholdReg, 0x65);    //55 65      // 高四位->最小信号强度，低三位->冲突最小信号强度,最大0xF7,最小0x44
-    }
-    else if ('C' == type)
-    {
-        I_SI522A_ClearBitMask(Status2Reg, BIT3); // 清MFCrypto1On
-        I_SI522A_SetBitMask(ComIEnReg, BIT7);    // 低电平触发中断
-        si523_write_reg(ControlReg, 0x10);       // 设置为发起者
-        si523_write_reg(ModeReg, 0x38);          // CRC初始值0x0000
-        si523_write_reg(RxSelReg, 0x84);         // RxWait,延迟RxWait个比特时间后激活接收机
-        si523_write_reg(RFCfgReg, 0x58);         // 接收增益,0x38 - 0x78,可设置0x79,增加检测器的灵敏度,最大0x7F
-        // 发射部分配置
-        si523_write_reg(GsNReg, 0xf8); // 调制系数
-        si523_write_reg(CWGsPReg, 0x30);
-        si523_write_reg(ModGsPReg, 0x0e);   // 调制系数
-        si523_write_reg(AutoTestReg, 0x00); // AmpRcv为1，接收内部信号处理过程是非线性的
-        si523_write_reg(TxASKReg, 0x00);    // typeC
-        si523_write_reg(TypeBReg, 0x00);
-        si523_write_reg(Fel1Reg, 0x00);   // Fel1Reg 同步字节 B2 4D
-        si523_write_reg(MfRxReg, 0x11);   // ParityDisable校验关闭，信号的频谱下至212kHz
-        si523_write_reg(DemodReg, 0x41);  // PLL相关
-        si523_write_reg(TxModeReg, 0x92); // Tx Framing C
-        si523_write_reg(RxModeReg, 0x92); // Rx framing C
-
-        si523_write_reg(RxThresholdReg, 0x65); // 55 65      // 高四位->最小信号强度，低三位->冲突最小信号强度,最大0xF7,最小0x44
-    }
-    PcdAntennaOn();
-    vTaskDelay(pdMS_TO_TICKS(2));
-}
-
-void PCD_SI522A_TypeA(void)
-{
-    while (1)
-    {
-        PCD_SI522A_TypeA_GetUID();
-
-        // PCD_SI522A_TypeA_rw_block();
-
-        vTaskDelay(pdMS_TO_TICKS(500));
-    }
-}
-
-char PCD_SI522A_TypeA_GetUID(void)
-{
-    // unsigned char ATQA[2]={0};
-    unsigned char UID[12] = {0};
+    unsigned char ATQA[2];
+    unsigned char UID[12];
     unsigned char SAK = 0;
     unsigned char UID_complate1 = 0;
     unsigned char UID_complate2 = 0;
 
-    ESP_LOGI(TAG, "Test_Si522_GetUID");
-    // si523_write_reg(RFCfgReg, RFCfgReg_Val); // 复位接收增益
+    ESP_LOGI(TAG, "Test_SI523_GetUID");
+    si523_write_reg(RFCfgReg, RFCfgReg_Val); // 复位接收增益
 
     // 寻卡
-    if (PcdRequest(PICC_REQALL, ATQA) != MI_OK) // 寻天线区内未进入休眠状态的卡，返回卡片类型 2字节
+    if (PcdRequest(PICC_REQIDL, ATQA) != MI_OK) // 寻天线区内未进入休眠状态的卡，返回卡片类型 2字节
     {
         si523_write_reg(RFCfgReg, 0x48);
-        if (PcdRequest(PICC_REQALL, ATQA) != MI_OK)
+        if (PcdRequest(PICC_REQIDL, ATQA) != MI_OK)
         {
             si523_write_reg(RFCfgReg, 0x58);
-            if (PcdRequest(PICC_REQALL, ATQA) != MI_OK)
+            if (PcdRequest(PICC_REQIDL, ATQA) != MI_OK)
             {
                 ESP_LOGI(TAG, "Request:fail");
                 return 1;
@@ -839,10 +712,16 @@ char PCD_SI522A_TypeA_GetUID(void)
     //		ESP_LOGI(TAG, "Halt:ok");
     //	}
 
+    // delay_us(100);
+    vTaskDelay(pdMS_TO_TICKS(1));
     return 0;
 }
 
-char PCD_SI522A_TypeA_rw_block(void)
+/*===============================
+ 函数功能：读A卡扇区
+
+ ================================*/
+char PCD_SI523_TypeA_rw_block(void)
 {
     unsigned char ATQA[2];
     unsigned char UID[12];
@@ -908,7 +787,7 @@ char PCD_SI522A_TypeA_rw_block(void)
         ESP_LOGI(TAG, "PcdRead:ok  ");
         for (unsigned char i = 0; i < 16; i++)
         {
-            ESP_LOGI(TAG, " %02x", CardReadBuf[i]);
+            ESP_LOGI(TAG, "%02x", CardReadBuf[i]);
         }
     }
 
@@ -927,7 +806,7 @@ char PCD_SI522A_TypeA_rw_block(void)
         ESP_LOGI(TAG, "PcdWrite:ok  ");
         for (unsigned char i = 0; i < 16; i++)
         {
-            ESP_LOGI(TAG, " %02x", CardWriteBuf[i]);
+            ESP_LOGI(TAG, "%02x", CardWriteBuf[i]);
         }
     }
 
@@ -942,7 +821,7 @@ char PCD_SI522A_TypeA_rw_block(void)
         ESP_LOGI(TAG, "PcdRead:ok  ");
         for (unsigned char i = 0; i < 16; i++)
         {
-            ESP_LOGI(TAG, " %02x", CardReadBuf[i]);
+            ESP_LOGI(TAG, "%02x", CardReadBuf[i]);
         }
     }
 
@@ -960,6 +839,149 @@ char PCD_SI522A_TypeA_rw_block(void)
     return 0;
 }
 
+/*===============================
+ 函数功能：读B卡初始化配置
+
+ ================================*/
+void PCD_SI523_TypeB_Init(void)
+{
+
+    I_SI523_ClearBitMask(Status2Reg, 0x08);
+    si523_write_reg(ModeReg, 0x3F); // For 0xFFFF crc
+    si523_write_reg(TReloadRegL, 30);
+    si523_write_reg(TReloadRegH, 0);
+    si523_write_reg(TModeReg, 0x8D);
+    si523_write_reg(TPrescalerReg, 0x3E);
+    si523_write_reg(TxASKReg, 0);         // Force 100ASK = 0//		delay_ms(100);
+    si523_write_reg(GsNReg, 0xff);        // TX输出电导设置f8 fa N
+    si523_write_reg(CWGsPReg, 0x3f);      // P_改变1的幅度
+    si523_write_reg(ModGsPReg, 0x07);     // 调制指数设置RegModGsp,, TYPEB ModConductance 0x1A P_改变0的幅度
+    si523_write_reg(TxModeReg, 0x83);     // 编码器设置,106kbps,14443B 03
+    si523_write_reg(BitFramingReg, 0x00); // 调制脉宽,0x13->2.95us RegTypeBFraming ,,TYPEB
+    si523_write_reg(AutoTestReg, 0x00);
+    // 低二位为接收增益，
+    // 00,10,20,30,40,50,60,70
+    // 18,23,18,23,33,38,43,48dB
+    si523_write_reg(RFCfgReg, RFCfgReg_Val);
+    si523_write_reg(RxModeReg, 0x83);
+    si523_write_reg(RxThresholdReg, 0x65);
+    I_SI523_ClearBitMask(RxSelReg, 0x3F);
+    I_SI523_SetBitMask(RxSelReg, 0x08);
+    I_SI523_ClearBitMask(TxModeReg, 0x80); // 无CRC,无奇偶校验
+    I_SI523_ClearBitMask(RxModeReg, 0x80);
+    I_SI523_ClearBitMask(Status2Reg, 0x08); // MFCrypto1On =0
+
+    PcdAntennaOn();
+}
+
+/*=================================
+ 函数功能：循环读取A卡UID
+
+=================================*/
+void PCD_SI523_TypeA(void)
+{
+    while (1)
+    {
+        PCD_SI523_TypeA_GetUID(); // 读A卡
+
+        // PCD_SI523_TypeA_rw_block();		//读A卡扇区
+
+        // delay_ms(500);
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+/*================================
+ 函数功能：循环读取B卡UID
+
+=================================*/
+void PCD_SI523_TypeB(void)
+{
+    while (1)
+    {
+        PCD_SI523_TypeB_GetUID(); // 读B卡
+
+        // PCD_SI523_IdentityCard_GetUID();		//读身份证
+
+        // delay_ms(500);
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+char PCD_SI523_TypeB_GetUID(void)
+{
+
+    ESP_LOGI(TAG, "Test_B_GetUID");
+
+    // si523_write_reg(0x02, 0xa0); //打开接收中断,则读卡会产生中断
+    //  Enable external interrupt
+    // EXTI->IMR |= 0x00000008;
+
+    // request 寻B卡;返回卡号
+    unsigned int len1;
+    unsigned char buf1[18] = {0x05, 0x00, 0x00, 0x71, 0xFF};
+
+    if (PcdComMF522(PCD_TRANSCEIVE, buf1, 5, buf1, &len1) != MI_OK)
+    {
+        ESP_LOGI(TAG, "Request:fail");
+        return 1;
+    }
+    else
+    {
+        if (buf1[0] == 0x50) // 判断是不是ATQB
+            ESP_LOGI(TAG, "Request:ok  UID:%02x %02x %02x %02x",
+                     buf1[1], buf1[2], buf1[3], buf1[4]);
+    }
+
+    return 0;
+}
+
+char PCD_SI523_IdentityCard_GetUID(void)
+{
+    // ESP_LOGI(TAG, "Test_identitycard");
+
+    // request 寻B卡
+    unsigned int len1;
+    unsigned char buf1[18] = {0x05, 0x00, 0x00, 0x71, 0xFF};
+
+    if (PcdComMF522(PCD_TRANSCEIVE, buf1, 5, buf1, &len1) != MI_OK)
+    {
+        ESP_LOGI(TAG, "Request:fail");
+        return 1;
+    }
+
+    // si523_write_reg(0x02, 0xa0); //打开接收中断,则读卡会产生中断
+    //  Enable external interrupt
+    // EXTI->IMR |= 0x00000008;
+
+    // 发送二代证非标ATTRIB指令
+    unsigned int len2;
+    unsigned char buf2[18] = {0x1D, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x01, 0x08, 0xF3, 0x10};
+    if (PcdComMF522(PCD_TRANSCEIVE, buf2, 11, buf2, &len2) != MI_OK)
+    {
+        ESP_LOGI(TAG, "ATTRIB:fail");
+        return 1;
+    }
+
+    // 获取UID
+    unsigned int len3;
+    unsigned char buf3[18] = {0x00, 0x36, 0x00, 0x00, 0x08, 0x57, 0x44};
+
+    if (PcdComMF522(PCD_TRANSCEIVE, buf3, 7, buf3, &len3) != MI_OK)
+    {
+        ESP_LOGI(TAG, "UID:fail");
+        return 1;
+    }
+    else
+    {
+        if (buf3[8] == 0x90 || buf3[9] == 0x00) // 判断是不是identitycard
+            ESP_LOGI(TAG, "UID:ok  UID:%02x %02x %02x %02x %02x %02x %02x %02x ",
+                     buf3[0], buf3[1], buf3[2], buf3[3], buf3[4], buf3[5], buf3[6], buf3[7]);
+    }
+
+    return 0;
+}
+
 //***********************************//修改新增内容
 
 /*
@@ -971,67 +993,45 @@ char PCD_SI522A_TypeA_rw_block(void)
  */
 void PcdReset(void)
 {
-    // delay_us(50);
+    // hard reset
+    //	HAL_GPIO_WritePin(S52_NRSTPD_GPIO_Port,S52_NRSTPD_Pin,GPIO_PIN_RESET);
+    //	// delay_us(100);
+    //	HAL_GPIO_WritePin(S52_NRSTPD_GPIO_Port,S52_NRSTPD_Pin,GPIO_PIN_SET);
+    //	// delay_us(100);
+
+    si523_write_reg(CommandReg, 0x0f); // 向CommandReg 写入 0x0f	作用是使RC522复位
+    while (si523_read_reg(CommandReg) & 0x10)
+        ; // Powerdown位为0时，表示RC522已准备好
+    // delay_us(100);
     vTaskDelay(pdMS_TO_TICKS(1));
-#if 1
-    //	SET_NFC_RST;    //RST拉高
-    CLR_NFC_RST; // RST拉低
-    vTaskDelay(pdMS_TO_TICKS(10));
-
-    //	vTaskDelay(pdMS_TO_TICKS(2));
-    SET_NFC_RST; // RST拉高
-    vTaskDelay(pdMS_TO_TICKS(2));
-#endif
-    // delay_us(500); // 需要与客户确认delayus函数延时准确。
-    vTaskDelay(pdMS_TO_TICKS(1));
-
-    si523_write_reg(CommandReg, 0x0f); // 向CommandReg 写入 0x0f	作用是使Si522复位
-    vTaskDelay(pdMS_TO_TICKS(1));
-    si523_write_reg(ModeReg, 0x3D); // 和Mifare卡通讯，CRC初始值0x6363
-
-    si523_write_reg(TReloadRegL, 30);     // 重装定时器值低位
-    si523_write_reg(TReloadRegH, 0);      // 重装定时器值高位
-    si523_write_reg(TModeReg, 0x8D);      // 跟随协议启动和停止
-    si523_write_reg(TPrescalerReg, 0x3E); // 6.78/3390=0.002Mhz,(1/2)*30=15ms产生中断
-
-    si523_write_reg(TxASKReg, 0x40); // 必须要
 }
 
 void Pcd_Hard_Reset(void)
 {
     gpio_set_level(SI523_RST_PIN, 0);
+    // delay_ms(2);
     vTaskDelay(pdMS_TO_TICKS(2));
     gpio_set_level(SI523_RST_PIN, 1);
     vTaskDelay(pdMS_TO_TICKS(2));
+    // delay_ms(2);
 }
 
-unsigned char Si5XX_SoftReset(void)
-{
-    unsigned char reg_data;
-    si523_write_reg(CommandReg, PCD_RESETPHASE);
-    vTaskDelay(pdMS_TO_TICKS(1)); // 复位需要1ms
-    reg_data = si523_read_reg(CommandReg);
-    if (0x20 == reg_data)
-        return SUCCESS;
-    else
-        return ERROR;
-}
-
-void I_SI522A_ClearBitMask(unsigned char reg, unsigned char mask)
+// SI523_interfaces
+void I_SI523_ClearBitMask(unsigned char reg, unsigned char mask)
 {
     char tmp = 0x00;
     tmp = si523_read_reg(reg);
     si523_write_reg(reg, tmp & ~mask); // clear bit mask
 }
 
-void I_SI522A_SetBitMask(unsigned char reg, unsigned char mask)
+void I_SI523_SetBitMask(unsigned char reg, unsigned char mask)
 {
     char tmp = 0x00;
     tmp = si523_read_reg(reg);
     si523_write_reg(reg, tmp | mask); // set bit mask
 }
 
-void I_SI522A_SiModifyReg(unsigned char RegAddr, unsigned char ModifyVal, unsigned char MaskByte)
+void I_SI523_SiModifyReg(unsigned char RegAddr, unsigned char ModifyVal, unsigned char MaskByte)
 {
     unsigned char RegVal;
     RegVal = si523_read_reg(RegAddr);
@@ -1046,25 +1046,28 @@ void I_SI522A_SiModifyReg(unsigned char RegAddr, unsigned char ModifyVal, unsign
     si523_write_reg(RegAddr, RegVal);
 }
 
-//
+/*===============================
+ 函数功能：ACD模式初始化配置
+
+ ================================*/
 void ACD_init_Fun(void)
 {
-    PCD_SI522A_TypeA_Init(); // Reader模式的初始化
+    PCD_SI523_TypeA_Init(); // 读A卡初始化配置
 
     PCD_ACD_AutoCalc(); // 自动获取阈值
 
-    PCD_ACD_Start(); // 初始化ACD配置寄存器，并且进入ACD模式
+    PCD_ACD_Init(); // ACD初始化配置
 }
 
-// acd 应用函数
-void PCD_ACD_Application(void)
-{
-}
+/*===============================
+ 函数功能：ACD寻卡
 
+ ================================*/
 void ACD_Fun(void)
 {
     // EXTI->IMR |= 0x00000008; // Enable external interrupt
-    PCD_IRQ_flagA = 0; // clear IRQ flag
+    gpio_intr_enable(SI523_INT_PIN); // Enable GPIO interrupt
+    PCD_IRQ_flagA = 0;               // clear IRQ flag
 
     while (1)
     {
@@ -1072,111 +1075,72 @@ void ACD_Fun(void)
         {
             ESP_LOGI(TAG, "PCD_IRQ_flagA");
             // EXTI->IMR &= 0xFFFFFFF7; // Disable external interrupt
+            gpio_intr_disable(SI523_INT_PIN); // Disable GPIO interrupt
 
             switch (PCD_IRQ())
             {
             case 0: // Other_IRQ
-                ESP_LOGI(TAG, "Other IRQ Occur");
-                PcdAntennaOn(); // 打开天线，防止静电干扰产生中断后，天线场强被异常关掉
-                PcdReset();     // 修改复位函数，增加硬掉电操作，防止芯片被静电异常操作导致无法工作。
-                PcdConfigISOType('A');
-                for (uint8_t i = 0; i < 3; i++)
-                {
-                    uint8_t ret = 0;
-                    ret = PCD_SI522A_TypeA_GetUID(); // 读卡
-                    if (!ret)
-                    {
-                        flag_read_ic_ok = 1;
-                        break;
-                    }
-                }
-                PcdConfigISOType('A'); // 初始化默认配置
-
-                //									PCD_SI522A_TypeA_GetUID();
-                //					PcdReset();			//软复位
-                //					//PcdReset();				//硬复位
-                //					PCD_SI522A_TypeA_Init();
-                //					PCD_ACD_Init();
+                // ESP_LOGI(TAG, "Other IRQ Occur\r\n");
+                PCD_SI523_TypeA_GetUID();
+                // PcdReset(); // 软复位
+                Pcd_Hard_Reset(); // 硬复位
+                PCD_SI523_TypeA_Init();
+                PCD_ACD_Init();
                 break;
 
-            case 1: // ACD_IRQ
-                /*********************************旧版********************************
-                    I_SI522A_SiModifyReg(0x01, 0, 0x20);	// Turn on the analog part of receiver
-                    PcdConfigISOType('A');
-                    PCD_SI522A_TypeA_GetUID();
-                    si523_write_reg(ComIEnReg, 0x80);		//复位02寄存器,在读卡函数中被改动
-                    si523_write_reg(CommandReg, 0xb0);	 	//进入软掉电,重新进入ACD（ALPPL）
-                *************************************************************/
-                /***********************新版建议使用（修复误触发后的异常丢失寄存器）******
-                ***add 2022/04/15
-                ** 1.防止异常产生中断后，由于芯片配置丢失，芯片再进入ACD模式异常
-                ** 2.用户可以将case0和case1都执行为case1的程序即可。
-                **********************************************************************/
-                PcdAntennaOn(); // 打开天线，防止静电干扰产生中断后，天线场强被异常关掉
-                PcdReset();     // 修改复位函数，增加硬掉电操作，防止芯片被静电异常操作导致无法工作。
-                PcdConfigISOType('A');
-                for (uint8_t i = 0; i < 3; i++) // 三次读卡
-                {
-                    uint8_t ret = 0;
-                    ret = PCD_SI522A_TypeA_GetUID();
-                    if (!ret)
-                    {
-                        flag_read_ic_ok = 1;
-                        break;
-                    }
-                }
-                si523_write_reg(ComIEnReg, 0x80); // 复位02寄存器,在读卡函数中被改动
-                PcdConfigISOType('A');            // 初始化默认配置
-                //		PCD_ACD_Init();       //初始化ACD寄存器配置，进入ACD低功耗探测模式
+            case 1:                                 // ACD_IRQ
+                I_SI523_SiModifyReg(0x01, 0, 0x20); // Turn on the analog part of receiver
+                PCD_SI523_TypeA_GetUID();
+
+                si523_write_reg(CommandReg, 0xb0); // 进入软掉电,重新进入ACD（ALPPL）
                 break;
 
             case 2: // ACDTIMER_IRQ
-                ESP_LOGI(TAG, "ACDTIMER_IRQ:Reconfigure the register ");
-                // PcdReset();			//软复位
+                ESP_LOGI(TAG, "ACDTIMER_IRQ:Reconfigure the register \r\n");
+                // PcdReset(); // 软复位
                 Pcd_Hard_Reset(); // 硬复位
-                PcdConfigISOType('A');
-                //		PCD_ACD_Init();
-
+                PCD_SI523_TypeA_Init();
+                PCD_ACD_Init();
                 break;
             }
 
             // EXTI->IMR |= 0x00000008; // Enable external interrupt
+            gpio_intr_enable(SI523_INT_PIN); // Enable GPIO interrupt
             PCD_IRQ_flagA = 0;
         }
         else
         {
+            // delay_ms(500);
             vTaskDelay(pdMS_TO_TICKS(500));
         }
     }
 }
 
-/********************************************************
- *PCD_ACD_AutoCalc(void) 函数主要为了上电后，自动计算并选择ADC的基准电压和合适的增益放大。
- *1.第一个VOCN数组是为了从最大基准电压开始轮询查，并将VCON值写入0F_K寄存器的bit[3:0],然后读取0F_G寄存器，计算100次的平均值，直到找到非0的最小值。
- *2. 0F_K寄存器在第一步获取的VCON值bit[2:0]基础上，或上TR增益控制位bit[6:5]，然后将换算的值写入0F_K寄存器，读取0F_G,获取最大非超7F阈值的增益控制位
- *3. 将获取的VCON和TR，写入0F_G。
- *4. 关于0F_K寄存器的定义请参考 《ACD初始化代码解析》文档
- *5. V1.3版本将0F_K寄存器的TIbit[4:3]从01修改为10  VCON数组进行了更新，TR计算时进行了更新。1016行，1094行代码！！！
- ********************************************************/
+/*===============================
+ 函数功能：自动获取阈值
+
+ ================================*/
 void PCD_ACD_AutoCalc(void)
 {
     unsigned char temp;
     unsigned char temp_Compare = 0;
-    unsigned char VCON_TR[8] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07}; // acd灵敏度调节 V1.3版本修改VCON值，
+    unsigned char VCON_TR[8] = {0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f}; // acd灵敏度调节
     unsigned char TR_Compare[4] = {0x00, 0x00, 0x00, 0x00};
     ACDConfigRegC_Val = 0x7f;
     unsigned char ACDConfigRegK_RealVal = 0;
-    si523_write_reg(TxControlReg, 0x83);   // 打开天线
-    I_SI522A_SetBitMask(CommandReg, 0x06); // 开启ADC_EXCUTE
+
+    si523_write_reg(TxControlReg, 0x83);  // 打开天线
+    I_SI523_SetBitMask(CommandReg, 0x06); // 开启ADC_EXCUTE
     // delay_us(200);
     vTaskDelay(pdMS_TO_TICKS(1));
+
     for (int i = 7; i > 0; i--)
     {
         si523_write_reg(ACDConfigSelReg, (ACDConfigK << 2) | 0x40);
         si523_write_reg(ACDConfigReg, VCON_TR[i]);
+
         si523_write_reg(ACDConfigSelReg, (ACDConfigG << 2) | 0x40);
         temp_Compare = si523_read_reg(ACDConfigReg);
-
         for (int m = 0; m < 100; m++)
         {
             si523_write_reg(ACDConfigSelReg, (ACDConfigG << 2) | 0x40);
@@ -1189,6 +1153,7 @@ void PCD_ACD_AutoCalc(void)
             // delay_us(100);
             vTaskDelay(pdMS_TO_TICKS(1));
         }
+
         if (temp_Compare == 0 || temp_Compare == 0x7f) // 比较当前值和所存值
         {
         }
@@ -1200,16 +1165,10 @@ void PCD_ACD_AutoCalc(void)
                 ACDConfigRegK_Val = VCON_TR[i];
             }
         }
-    }
+    } // 取得最接近的参考电压VCON
+
     ACDConfigRegK_RealVal = ACDConfigRegK_Val; // 取得最接近的参考电压VCON
-    if ((ACDConfigRegK_Val == 0x0e) | (ACDConfigRegK_Val == 0x0f))
-    {
-        while (1)
-        {
-            ESP_LOGI(TAG, "Attention!!! The RX partial resistance ratio is too small,please turn down 5.1K resistance and try again!!");
-            vTaskDelay(pdMS_TO_TICKS(2000));
-        }
-    }
+
     for (int j = 0; j < 4; j++)
     {
         si523_write_reg(ACDConfigSelReg, (ACDConfigK << 2) | 0x40);
@@ -1227,36 +1186,32 @@ void PCD_ACD_AutoCalc(void)
         }
         TR_Compare[j] = temp_Compare;
     } // 再调TR的档位，将采集值填入TR_Compare[]
-    ESP_LOGI(TAG, "TR_Compare: %02x %02x %02x %02x ", TR_Compare[0], TR_Compare[1], TR_Compare[2], TR_Compare[3]);
-    for (int z = 0; z < 3; z++) // TR有四档可调，但是最大档的时候，电源有抖动，可能会导致ADC的值抖动较大，造成误触发
+
+    for (int z = 0; z < 3; z++)
     {
-        if (TR_Compare[z] == 0x7F)
+        if (TR_Compare[z] == 0x7f)
         {
         }
         else
         {
-            ACDConfigRegC_Val = TR_Compare[z];                       // 最终选择的配置
-            ACDConfigRegK_Val = ACDConfigRegK_RealVal + z * 32 + 16; // V1.3版本将斜率修改，bit[4:3]修改为10
+            ACDConfigRegC_Val = TR_Compare[z]; // 最终选择的配置
+            ACDConfigRegK_Val = ACDConfigRegK_RealVal + z * 32;
         }
     } // 再选出一个非7f大值
 
     si523_write_reg(ACDConfigSelReg, (ACDConfigK << 2) | 0x40);
-    ESP_LOGI(TAG, " ACDConfigRegK_Val:%02x ", ACDConfigRegK_Val);
-    I_SI522A_SetBitMask(CommandReg, 0x06); // 关闭ADC_EXCUTE
+    ESP_LOGI(TAG, "ACDConfigRegK_Val:%02x ", ACDConfigRegK_Val);
+
+    I_SI523_SetBitMask(CommandReg, 0x06); // 关闭ADC_EXCUTE
 }
 
-void TestADC_G(void)
-{
-    unsigned char test = 0;
-    I_SI522A_SetBitMask(CommandReg, 0x06); // 开启ADC_EXCUTE
-    si523_write_reg(ACDConfigSelReg, (ACDConfigG << 2) | 0x40);
-    test = si523_read_reg(ACDConfigReg);
-    ESP_LOGI(TAG, " ACDConfigG_Val:%02x ", test);
-}
+/*===============================
+ 函数功能：ACD初始化配置
 
-void PCD_ACD_Start(void)
+ ================================*/
+void PCD_ACD_Init(void)
 {
-    si523_write_reg(DivIrqReg, 0x60); // 清中断，该处不清中断，进入ACD模式后会异常产生有卡中断。
+    si523_write_reg(DivIrqReg, 0x60); ////清中断，该处不清中断，进入ACD模式后会异常产生有卡中断。
     si523_write_reg(ACDConfigSelReg, (ACDConfigJ << 2) | 0x40);
     si523_write_reg(ACDConfigReg, 0x55); // Clear ACC_IRQ
 
@@ -1284,29 +1239,30 @@ void PCD_ACD_Start(void)
 
     si523_write_reg(ACDConfigSelReg, (ACDConfigJ << 2) | 0x40); // 设置监测ACD功能下的重要寄存器的配置值，寄存器丢失后会立即产生中断
     si523_write_reg(ACDConfigReg, ACDConfigRegJ_Val);           // 写非0x55的值即开启功能，写0x55清除使能停止功能。
-    si523_write_reg(CommandReg, 0xb0);                          // 进入ACD
+
+    si523_write_reg(CommandReg, 0xb0); // 进入ACD
 }
 
 char PCD_IRQ(void)
 {
-    unsigned char status_Si522ACD_IRQ;
-    unsigned char temp_Si522ACD_IRQ;
+    unsigned char status_SI523CD_IRQ;
+    unsigned char temp_SI523CD_IRQ;
 
-    temp_Si522ACD_IRQ = si523_read_reg(DivIrqReg);
-    if (temp_Si522ACD_IRQ & 0x40) // ACD中断
+    temp_SI523CD_IRQ = si523_read_reg(DivIrqReg);
+    if (temp_SI523CD_IRQ & 0x40) // ACD中断
     {
         si523_write_reg(DivIrqReg, 0x40); // Clear ACDIRq
 
-        status_Si522ACD_IRQ = 1;
-        return status_Si522ACD_IRQ;
+        status_SI523CD_IRQ = 1;
+        return status_SI523CD_IRQ;
     }
 
-    if (temp_Si522ACD_IRQ & 0x20) // ACD看门狗中断
+    if (temp_SI523CD_IRQ & 0x20) // ACD看门狗中断
     {
         si523_write_reg(DivIrqReg, 0x20); // Clear ACDTIMER_IRQ
 
-        status_Si522ACD_IRQ = 2;
-        return status_Si522ACD_IRQ;
+        status_SI523CD_IRQ = 2;
+        return status_SI523CD_IRQ;
     }
 
     si523_write_reg(DivIrqReg, 0x40); // Clear ACDIRq
@@ -1316,208 +1272,5 @@ char PCD_IRQ(void)
     si523_write_reg(0x20, (0x09 << 2) | 0x40);
     si523_write_reg(0x0f, 0x55); // Clear ACC_IRQ
 
-    return status_Si522ACD_IRQ = 0;
-}
-void pcd_acd_application(void)
-{
-    uint8_t RFlow_IRQ = 0;
-    uint8_t ACD_IRQ = 0;
-    si523_write_reg(0x20, (0x0f << 2) | 0x40);
-    RFlow_IRQ = si523_read_reg(0x0f); // RFLowDetect_IRQ
-    ACD_IRQ = si523_read_reg(DivIrqReg);
-    pcd_acd_end(); // 清除中断
-    if ((ACD_IRQ & 0x40) | (RFlow_IRQ & 0x01))
-    {
-
-        PcdReset();
-#if 0
-			PcdConfigISOType('A');
-			I_SI522A_SiModifyReg(0x01, 0, 0x20);	// Turn on the analog part of receiver 
-			for(uint8_t i=0;i<3;i++)          //三次读卡
-				{
-					uint8_t ret=0;
-					ret=PCD_SI522A_TypeA_GetUID(); 
-					if(!ret)
-					{
-							flag_read_ic_ok=1;
-						  break;
-					}
-				}
-
-#endif
-#if 1
-        ESP_LOGI(TAG, " Card Detected!!!");
-        Card_Check();
-#endif
-        PcdAntennaOff();
-        vTaskDelay(pdMS_TO_TICKS(200)); // 模拟读卡片后手拿开过程
-    }
-    else
-    {
-        //		pcd_acd_end();
-
-        //		PCD_ACD_AutoCalc(); //自动获取0F_K寄存器和0F_C的阈值
-#if 0
-			ESP_LOGI(TAG, "this is a error!!!");
-		//	vTaskDelay(pdMS_TO_TICKS(200));
-#endif
-    }
-}
-
-void pcd_acd_end(void)
-{
-    si523_write_reg(DivIrqReg, 0x40); // Clear ACDIRq
-    si523_write_reg(DivIrqReg, 0x20); // Clear ACDTIMER_IRQ
-    si523_write_reg(0x20, (0x0f << 2) | 0x40);
-    si523_write_reg(0x0f, 0x0a); // Clear OSCMon_IRQ,RFLowDetect_IRQ
-    si523_write_reg(0x20, (0x09 << 2) | 0x40);
-    si523_write_reg(0x0f, 0x55); // Clear ACC_IRQ
-
-    //	si523_write_reg(CommandReg,PCD_RESETPHASE);   //复位
-}
-
-void Card_Check(void)
-{
-    unsigned char i;
-    unsigned char statusA, statusB, StatusC;
-    unsigned char Block = 0x05;
-    //		statusA = ComReqA(WRITE,Block);
-    //		PcdHalt();
-    for (uint8_t i = 0; i < 3; i++) // 三次读卡
-    {
-        //			uint8_t ret=0;
-        statusA = ComReqA(READ, Block);
-        if (!statusA)
-        {
-            flag_read_ic_ok = 1;
-            break;
-        }
-    }
-    //	statusA = ComReqA(READ,Block);
-    ESP_LOGI(TAG, "ComReqA status:%02x", statusA);
-    statusA = ComReqA(READ, Block);
-    ESP_LOGI(TAG, "ComReqA status:%02x", statusA);
-    if (statusA == MI_OK)
-    {
-        ESP_LOGI(TAG, "UIDA:%02x %02x %02x %02x", UIDA[0], UIDA[1], UIDA[2], UIDA[3]);
-#if 0
-			ESP_LOGI(TAG, " Block Read %2x: ",Block);
-			for(unsigned char i=0;i<16;i++)
-			{
-			ESP_LOGI(TAG, " %02x",CardReadBuf[i]);
-			}
-#endif
-    }
-    else
-    {
-        statusB = ComReqB();
-        if (statusB == MI_OK)
-        {
-            ESP_LOGI(TAG, "UIDB:");
-            for (i = 0; i < 8; i++)
-            {
-                ESP_LOGI(TAG, " %02x", UIDB[i]);
-            }
-        }
-    }
-}
-
-unsigned char ComReqA(unsigned char rw, unsigned char Block)
-{
-    unsigned char status = 0;
-    PcdConfigISOType('A');
-    if ((status = PcdRequest(PICC_REQALL, ATQA)) != MI_OK)
-    {
-        ESP_LOGE(TAG, "Request failed");
-        return MI_ERR;
-    }
-    else
-    {
-        ESP_LOGI(TAG, "Request:ok  ATQA:%02x %02x", ATQA[0], ATQA[1]); //todo
-    }
-    if ((status = PcdAnticoll(UIDA, PICC_ANTICOLL1)) != MI_OK)
-        return MI_ERR;
-
-#if 1 // 操作扇区
-    if (PcdSelect(UIDA, &SAK) != MI_OK)
-        return MI_ERR;
-    if (PcdAuthState(PICC_AUTHENT1A, Block, DefaultKeyABuf, UIDA) != MI_OK)
-        return MI_ERR;
-    switch (rw)
-    {
-    case 0:
-        status = PcdRead(Block, CardReadBuf);
-        break;
-    case 1:
-        status = PcdWrite(Block, CardWriteBuf);
-        break;
-    default:
-        break;
-    }
-
-#endif
-
-    return status;
-}
-
-unsigned char ComReqB(void)
-{
-    uint8_t status = MI_ERR;
-    uint8_t i;
-    uint8_t cnt;
-    uint8_t ATQB[16];
-
-    PcdConfigISOType('B');
-
-    cnt = 3; // 多次轮询N次
-    while (cnt--)
-    {
-        status = PcdRequestB(0x08, 0, 0, ATQB);
-
-        if (status == MI_COLLERR) // 有冲突，超过一张卡
-        {
-            if ((status == PcdRequestB(0x08, 0, 2, ATQB)) != MI_OK)
-            {
-                for (i = 1; i < 4; i++)
-                {
-                    if ((status = PcdSlotMarker(i, ATQB)) == MI_OK)
-                    {
-                        break;
-                    }
-                }
-                if (status == MI_OK)
-                {
-                    break;
-                }
-            }
-            else
-            {
-                break;
-            }
-        }
-    }
-    if (status == MI_OK)
-    {
-        // typeB 106kbps
-        status = PcdAttriB(&ATQB[1], 0, ATQB[10] & 0x0f, PICC_CID, ATQB);
-
-        if (status == MI_OK)
-        {
-            ATQB[0] = 0x50;     // 恢复默认值
-            GetIdcardNum(UIDB); // 获取卡号
-        }
-    }
-
-    return status;
-}
-void si523_gpio_init()
-{
-    gpio_config_t rst_io_conf = {
-        .intr_type = GPIO_INTR_DISABLE,
-        .mode = GPIO_MODE_OUTPUT,
-        .pin_bit_mask = (1ULL << SI523_RST_PIN),
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-    };
-    gpio_config(&rst_io_conf);
+    return status_SI523CD_IRQ = 0;
 }

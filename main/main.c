@@ -93,17 +93,20 @@ void si523_task(void *arg)
     {
         if (xSemaphoreTake(si523_semaphore, portMAX_DELAY) == pdTRUE)
         {
-            if (1 == PCD_IRQ_flagA) // IRQ pin脚中断检测有中断信号产生
-            {
-                ESP_LOGI(TAG, "PCD_IRQ_flagA is set, processing interrupt...");
-                PCD_IRQ_flagA = 0;
-                pcd_acd_application();
-                PCD_SI522A_TypeA_Init(); // Reader模式的初始化
-                PCD_ACD_Start();         // 初始化ACD配置寄存器，并且进入ACD模式
-            }
+            // if (1 == PCD_IRQ_flagA) // IRQ pin脚中断检测有中断信号产生
+            // {
+            //     ESP_LOGI(TAG, "PCD_IRQ_flagA is set, processing interrupt...");
+            //     PCD_IRQ_flagA = 0;
+            //     pcd_acd_application();
+            //     ESP_LOGI(TAG, "1");
+            //     PCD_SI522A_TypeA_Init(); // Reader模式的初始化
+            //     ESP_LOGI(TAG, "2");
+            //     PCD_ACD_Start();         // 初始化ACD配置寄存器，并且进入ACD模式
+            //     ESP_LOGI(TAG, "3");
+            // }
 
             // PCD_SI522A_TypeA_GetUID();
-            // vTaskDelay(pdMS_TO_TICKS(100));
+            vTaskDelay(pdMS_TO_TICKS(100));
         }
     }
 }
@@ -120,16 +123,18 @@ void app_main(void)
 
     si523_gpio_init(); // 初始化GPIO
 
-    Pcd_Hard_Reset(); // 硬复位，确保芯片处于初始状态
+    Pcd_Hard_Reset(); // 硬复位
 
-    PCD_SI522A_TypeA_Init(); // Reader模式的初始化
+    vTaskDelay(pdMS_TO_TICKS(500)); // 等待GPIO稳
 
-    PCD_ACD_AutoCalc(); // 自动获取0F_K寄存器和0F_C的阈值
-    PCD_ACD_Start();    // 初始化ACD配置寄存器，并且进入ACD模式
-
-    // 配置中断并启动任务
+    // 配置中断
     if ((err = si523_irq_init()) != ESP_OK)
         goto app_exit;
+
+    gpio_intr_disable(SI523_INT_PIN); // 先禁用中断，等任务准备好后再启用
+
+    ACD_init_Fun();
+    ACD_Fun();
 
     xTaskCreate(si523_task, "si523_task", 2048, NULL, 10, NULL);
 
