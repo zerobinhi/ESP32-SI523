@@ -2,13 +2,9 @@
 
 static const char *TAG = "si523";
 
-extern uint8_t PCD_IRQ_flagA;
-unsigned char ACDConfigRegK_Val;
-unsigned char ACDConfigRegC_Val;
-
-static uint8_t pcd_irq_flag_a = 0;
-static uint8_t acd_cfg_k_val = 0;
-static uint8_t acd_cfg_c_val = 0;
+extern uint8_t g_pcd_irq_flag_a;
+uint8_t g_acd_cfg_k_val;
+uint8_t g_acd_cfg_c_val;
 
 esp_err_t si523_write_reg(uint8_t reg, uint8_t data)
 {
@@ -40,7 +36,7 @@ void si523_clear_bit_mask(unsigned char reg, unsigned char mask)
 
 void si523_gpio_init(void)
 {
-    // 配置RST引脚为输出，并设置初始状态为高电平
+    // 配置RST引脚为输出
     gpio_config_t rst_conf = {
         .intr_type = GPIO_INTR_DISABLE,
         .mode = GPIO_MODE_OUTPUT,
@@ -659,7 +655,7 @@ void PCD_ACD_AutoCalc(void)
     unsigned char temp_Compare = 0;
     unsigned char VCON_TR[8] = {0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f}; // acd灵敏度调节
     unsigned char TR_Compare[4] = {0x00, 0x00, 0x00, 0x00};
-    ACDConfigRegC_Val = 0x7f;
+    g_acd_cfg_c_val = 0x7f;
     unsigned char ACDConfigRegK_RealVal = 0;
 
     si523_write_reg(SI523_REG_TX_CONTROL, 0x83); // 打开天线
@@ -692,20 +688,20 @@ void PCD_ACD_AutoCalc(void)
         }
         else
         {
-            if (temp_Compare < ACDConfigRegC_Val)
+            if (temp_Compare < g_acd_cfg_c_val)
             {
-                ACDConfigRegC_Val = temp_Compare;
-                ACDConfigRegK_Val = VCON_TR[i];
+                g_acd_cfg_c_val = temp_Compare;
+                g_acd_cfg_k_val = VCON_TR[i];
             }
         }
     } // 取得最接近的参考电压VCON
 
-    ACDConfigRegK_RealVal = ACDConfigRegK_Val; // 取得最接近的参考电压VCON
+    ACDConfigRegK_RealVal = g_acd_cfg_k_val; // 取得最接近的参考电压VCON
 
     for (int j = 0; j < 4; j++)
     {
         si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_LPD_CFG1 << 2) | 0x40);
-        si523_write_reg(SI523_REG_ACD_CFG, j * 32 + ACDConfigRegK_Val);
+        si523_write_reg(SI523_REG_ACD_CFG, j * 32 + g_acd_cfg_k_val);
 
         si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_ADC_VAL << 2) | 0x40);
         temp_Compare = si523_read_reg(SI523_REG_ACD_CFG);
@@ -727,13 +723,13 @@ void PCD_ACD_AutoCalc(void)
         }
         else
         {
-            ACDConfigRegC_Val = TR_Compare[z]; // 最终选择的配置
-            ACDConfigRegK_Val = ACDConfigRegK_RealVal + z * 32;
+            g_acd_cfg_c_val = TR_Compare[z]; // 最终选择的配置
+            g_acd_cfg_k_val = ACDConfigRegK_RealVal + z * 32;
         }
     } // 再选出一个非7f大值
 
     si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_LPD_CFG1 << 2) | 0x40);
-    ESP_LOGI(TAG, "ACDConfigRegK_Val:%02x ", ACDConfigRegK_Val);
+    ESP_LOGI(TAG, "g_acd_cfg_k_val:%02x ", g_acd_cfg_k_val);
 
     si523_set_bit_mask(SI523_REG_COMMAND, 0x06); // 关闭ADC_EXCUTE
 }
@@ -820,10 +816,8 @@ uint8_t si523_type_a_get_uid(uint8_t *uid, uint8_t *uid_len)
     *uid_len = uid_offset;
 
     ESP_LOGI(TAG, "UID (Len:%d):", *uid_len);
-    for (int i = 0; i < *uid_len; i++)
-    {
-        ESP_LOGI(TAG, " %02x", uid[i]);
-    }
+
+    ESP_LOG_BUFFER_HEX(TAG, uid, *uid_len);
 
     return SI523_OK;
 }
@@ -1008,6 +1002,7 @@ static uint8_t si523_read_acd_reg(uint8_t sub_reg)
     return si523_read_reg(SI523_REG_ACD_CFG);
 }
 
+#if 0
 void si523_acd_auto_calc(void)
 {
     uint8_t adc_val;
@@ -1020,7 +1015,7 @@ void si523_acd_auto_calc(void)
     int tr_idx;
     int final_tr_idx;
 
-    acd_cfg_c_val = 0x7F;
+    g_acd_cfg_c_val = 0x7F;
 
     si523_write_reg(SI523_REG_TX_CONTROL, 0x83);
     si523_set_bit_mask(SI523_REG_COMMAND, 0x06); /* ADC_EXECUTE */
@@ -1046,14 +1041,14 @@ void si523_acd_auto_calc(void)
 
         if (avg_adc_val != 0 && avg_adc_val != 0x7F)
         {
-            if (avg_adc_val < acd_cfg_c_val)
+            if (avg_adc_val < g_acd_cfg_c_val)
             {
-                acd_cfg_c_val = avg_adc_val;
-                acd_cfg_k_val = vcon_tr_table[vcon_idx];
+                g_acd_cfg_c_val = avg_adc_val;
+                g_acd_cfg_k_val = vcon_tr_table[vcon_idx];
             }
         }
     }
-    cfg_k_real_val = acd_cfg_k_val;
+    cfg_k_real_val = g_acd_cfg_k_val;
 
     /* Find optimal TR */
     for (tr_idx = 0; tr_idx < 4; tr_idx++)
@@ -1074,14 +1069,101 @@ void si523_acd_auto_calc(void)
     {
         if (tr_compare_table[final_tr_idx] != 0x7F)
         {
-            acd_cfg_c_val = tr_compare_table[final_tr_idx];
-            acd_cfg_k_val = cfg_k_real_val + final_tr_idx * 32;
+            g_acd_cfg_c_val = tr_compare_table[final_tr_idx];
+            g_acd_cfg_k_val = cfg_k_real_val + final_tr_idx * 32;
         }
     }
 
-    ESP_LOGI(TAG, "ACD AutoCalc: CfgK=0x%02x, CfgC=0x%02x", acd_cfg_k_val, acd_cfg_c_val);
+    ESP_LOGI(TAG, "ACD AutoCalc: CfgK=0x%02x, CfgC=0x%02x", g_acd_cfg_k_val, g_acd_cfg_c_val);
     si523_clear_bit_mask(SI523_REG_COMMAND, 0x06);
 }
+
+#else
+void si523_acd_auto_calc(void)
+{
+    unsigned char temp;
+    unsigned char temp_Compare = 0;
+    unsigned char VCON_TR[8] = {0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f}; // acd灵敏度调节
+    unsigned char TR_Compare[4] = {0x00, 0x00, 0x00, 0x00};
+    g_acd_cfg_c_val = 0x7f;
+    unsigned char ACDConfigRegK_RealVal = 0;
+
+    si523_write_reg(SI523_REG_TX_CONTROL, 0x83); // 打开天线
+    si523_set_bit_mask(SI523_REG_COMMAND, 0x06); // 开启ADC_EXCUTE
+    // delay_us(200);
+    vTaskDelay(pdMS_TO_TICKS(1));
+
+    for (int i = 7; i > 0; i--)
+    {
+        si523_write_reg(ACDConfigSelReg, (ACDConfigK << 2) | 0x40);
+        si523_write_reg(ACDConfigReg, VCON_TR[i]);
+
+        si523_write_reg(ACDConfigSelReg, (ACDConfigG << 2) | 0x40);
+        temp_Compare = si523_read_reg(ACDConfigReg);
+        for (int m = 0; m < 100; m++)
+        {
+            si523_write_reg(ACDConfigSelReg, (ACDConfigG << 2) | 0x40);
+            temp = si523_read_reg(ACDConfigReg);
+
+            if (temp == 0)
+                break; // 处在接近的VCON值附近值，如果偶合出现0值，均有概率误触发，应舍弃该值。
+
+            temp_Compare = (temp_Compare + temp) / 2;
+            // delay_us(100);
+            vTaskDelay(pdMS_TO_TICKS(1));
+        }
+
+        if (temp_Compare == 0 || temp_Compare == 0x7f) // 比较当前值和所存值
+        {
+        }
+        else
+        {
+            if (temp_Compare < g_acd_cfg_c_val)
+            {
+                g_acd_cfg_c_val = temp_Compare;
+                g_acd_cfg_k_val = VCON_TR[i];
+            }
+        }
+    } // 取得最接近的参考电压VCON
+
+    ACDConfigRegK_RealVal = g_acd_cfg_k_val; // 取得最接近的参考电压VCON
+
+    for (int j = 0; j < 4; j++)
+    {
+        si523_write_reg(ACDConfigSelReg, (ACDConfigK << 2) | 0x40);
+        si523_write_reg(ACDConfigReg, j * 32 + g_acd_cfg_k_val);
+
+        si523_write_reg(ACDConfigSelReg, (ACDConfigG << 2) | 0x40);
+        temp_Compare = si523_read_reg(ACDConfigReg);
+        for (int n = 0; n < 100; n++)
+        {
+            si523_write_reg(ACDConfigSelReg, (ACDConfigG << 2) | 0x40);
+            temp = si523_read_reg(ACDConfigReg);
+            temp_Compare = (temp_Compare + temp) / 2;
+            // delay_us(100);
+            vTaskDelay(pdMS_TO_TICKS(1));
+        }
+        TR_Compare[j] = temp_Compare;
+    } // 再调TR的档位，将采集值填入TR_Compare[]
+
+    for (int z = 0; z < 3; z++)
+    {
+        if (TR_Compare[z] == 0x7f)
+        {
+        }
+        else
+        {
+            g_acd_cfg_c_val = TR_Compare[z]; // 最终选择的配置
+            g_acd_cfg_k_val = ACDConfigRegK_RealVal + z * 32;
+        }
+    } // 再选出一个非7f大值
+
+    si523_write_reg(ACDConfigSelReg, (ACDConfigK << 2) | 0x40);
+    ESP_LOGI(TAG, "g_acd_cfg_k_val:%02x ", g_acd_cfg_k_val);
+
+    si523_set_bit_mask(SI523_REG_COMMAND, 0x06); // 关闭ADC_EXCUTE
+}
+#endif
 
 void si523_acd_init(void)
 {
@@ -1094,7 +1176,7 @@ void si523_acd_init(void)
     si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_ACRDCFG << 2) | 0x40); // 设置相对模式或者绝对模式
     si523_write_reg(SI523_REG_ACD_CFG, SI523_ACD_ACRDCFG_DEFAULT);
     si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_MAN_REF << 2) | 0x40); // 设置无卡场强值
-    si523_write_reg(SI523_REG_ACD_CFG, ACDConfigRegC_Val);
+    si523_write_reg(SI523_REG_ACD_CFG, g_acd_cfg_c_val);
     si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_VAL_DELTA << 2) | 0x40); // 设置灵敏度，一般建议为4，在调试时，可以适当降低验证该值，验证ACD功能
     si523_write_reg(SI523_REG_ACD_CFG, SI523_ACD_VAL_DELTA_DEFAULT);
     si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_WDT_CNT << 2) | 0x40); // 设置看门狗定时器时间
@@ -1102,7 +1184,7 @@ void si523_acd_init(void)
     si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_ARI_CFG << 2) | 0x40); // 设置ARI功能，在天线场强打开前1us产生ARI电平控制触摸芯片Si14TP的硬件屏蔽引脚SCT
     si523_write_reg(SI523_REG_ACD_CFG, SI523_ACD_ARI_CFG_DEFAULT);
     si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_LPD_CFG1 << 2) | 0x40); // 设置ADC的基准电压和放大增益
-    si523_write_reg(SI523_REG_ACD_CFG, ACDConfigRegK_Val);
+    si523_write_reg(SI523_REG_ACD_CFG, g_acd_cfg_k_val);
     si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_RF_LOW_DET << 2) | 0x40); // 设置监测ACD功能是否产生场强，意外产生可能导致读卡芯片复位或者寄存器丢失
     si523_write_reg(SI523_REG_ACD_CFG, SI523_ACD_RF_LOW_DET_DEFAULT);
     si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_IRQ_EN << 2) | 0x40); // 设置ACD模式下相关功能的标志位传导到IRQ引脚

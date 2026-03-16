@@ -5,7 +5,7 @@ static const char *TAG = "main";
 uint8_t g_uid[4];
 uint8_t g_uid_len = 4;
 
-uint8_t PCD_IRQ_flagA = 0;
+uint8_t g_pcd_irq_flag_a = 0;
 
 // 全局句柄
 SemaphoreHandle_t si523_semaphore = NULL;
@@ -38,7 +38,7 @@ static void IRAM_ATTR si523_irq_handler(void *arg)
         if (si523_semaphore != NULL)
         {
             xSemaphoreGiveFromISR(si523_semaphore, &xHigherPriorityTaskWoken);
-            PCD_IRQ_flagA = 1;
+            g_pcd_irq_flag_a = 1;
         }
         portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
     }
@@ -97,9 +97,9 @@ void si523_task(void *arg)
         if (xSemaphoreTake(si523_semaphore, portMAX_DELAY) == pdTRUE)
         {
 
-            if (PCD_IRQ_flagA)
+            if (g_pcd_irq_flag_a)
             {
-                ESP_LOGI(TAG, "PCD_IRQ_flagA");
+                ESP_LOGI(TAG, "g_pcd_irq_flag_a");
                 // EXTI->IMR &= 0xFFFFFFF7; // Disable external interrupt
                 gpio_intr_disable(SI523_INT_PIN); // Disable GPIO interrupt
 
@@ -133,7 +133,7 @@ void si523_task(void *arg)
 
                 // EXTI->IMR |= 0x00000008; // Enable external interrupt
                 gpio_intr_enable(SI523_INT_PIN); // Enable GPIO interrupt
-                PCD_IRQ_flagA = 0;
+                g_pcd_irq_flag_a = 0;
             }
             else
             {
@@ -158,7 +158,7 @@ void app_main(void)
 
     si523_hard_reset(); // 硬复位
 
-    vTaskDelay(pdMS_TO_TICKS(500)); // 等待GPIO稳
+    vTaskDelay(pdMS_TO_TICKS(500)); // 等待GPIO稳定
 
     // 配置中断
     if ((err = si523_irq_init()) != ESP_OK)
@@ -169,7 +169,7 @@ void app_main(void)
     si523_acd_start();
 
     gpio_intr_enable(SI523_INT_PIN); // Enable GPIO interrupt
-    PCD_IRQ_flagA = 0;               // clear IRQ flag
+    g_pcd_irq_flag_a = 0;               // clear IRQ flag
 
     xTaskCreate(si523_task, "si523_task", 2048, NULL, 10, NULL);
 
