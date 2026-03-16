@@ -155,6 +155,14 @@
 #define SI523_MAX_RLEN 18         // 最大接收数据长度
 #define SI523_MIFARE_BLOCK_LEN 16 // M1卡块数据长度
 
+// 射频增益配置
+#define SI523_RX_GAIN_18DB           0x08
+#define SI523_RX_GAIN_23DB           0x18
+#define SI523_RX_GAIN_33DB           0x48
+#define SI523_RX_GAIN_38DB           0x58
+#define SI523_RX_GAIN_43DB           0x68
+#define SI523_RX_GAIN_48DB           0x78
+
 // -------------------------- 外部变量声明 --------------------------
 extern i2c_master_dev_handle_t si523_handle;
 extern i2c_master_bus_handle_t i2c_bus_handle;
@@ -179,7 +187,7 @@ void si523_antenna_off(void);
 void si523_set_rx_gain(uint8_t gain);
 
 // CRC硬件计算
-void si523_calculate_crc(uint8_t *in_data, uint8_t len, uint8_t *out_data);
+void si523_calculate_crc(uint8_t *in_buf, uint8_t data_len, uint8_t *out_buf);
 
 // ISO14443A 核心操作
 uint8_t si523_request(uint8_t req_code, uint8_t *tag_type);
@@ -204,51 +212,7 @@ void si523_acd_auto_calc(void);
 void si523_acd_config(void);
 void si523_acd_init(void);
 void si523_acd_start(void);
-// uint8_t si523_irq_handler(void);
-
-
-void PcdAntennaOn(void);
-void PcdAntennaOff(void);
-void CalulateCRC(unsigned char *pIndata, unsigned char len, unsigned char *pOutData);
-
-char PcdComMF522(unsigned char Command, unsigned char *pInData, unsigned char InLenByte, unsigned char *pOutData, unsigned int *pOutLenBit);
-
-char PcdRequest(unsigned char req_code, unsigned char *pTagType);         // 寻卡
-char PcdAnticoll(unsigned char *pSnr, unsigned char anticollision_level); // 读卡号
-char PcdSelect(unsigned char *pSnr, unsigned char *sak);
-char PcdSelect1(unsigned char *pSnr, unsigned char *sak);
-char PcdSelect2(unsigned char *pSnr, unsigned char *sak);
-char PcdSelect3(unsigned char *pSnr, unsigned char *sak);
-char PcdHalt(void);
-
-char PcdAuthState(unsigned char auth_mode, unsigned char addr, unsigned char *pKey, unsigned char *pSnr);
-char PcdWrite(unsigned char ucAddr, unsigned char *pData);
-char PcdRead(unsigned char ucAddr, unsigned char *pData);
-
-void PCD_SI523_TypeA_Init(void);          // 读A卡初始化
-char PCD_SI523_TypeA_GetUID(void);        // 读A卡
-char PCD_SI523_TypeA_rw_block(void);      // 读A卡扇区
-void PCD_SI523_TypeB_Init(void);          // 读B卡初始化
-char PCD_SI523_TypeB_GetUID(void);        // 读B卡
-char PCD_SI523_IdentityCard_GetUID(void); // 读身份证
-
-void PCD_SI523_TypeA(void);
-void PCD_SI523_TypeB(void);
-
-void PcdReset(void);       // 软复位
-void Pcd_Hard_Reset(void); // 硬复位
-
-void I_SI523_ClearBitMask(unsigned char reg, unsigned char mask);
-void I_SI523_SetBitMask(unsigned char reg, unsigned char mask);
-void I_SI523_SiModifyReg(unsigned char RegAddr, unsigned char ModifyVal, unsigned char MaskByte);
-
-esp_err_t si523_write_reg(uint8_t reg, uint8_t data);
-uint8_t si523_read_reg(uint8_t reg);
-void si523_gpio_init(void);
-void ACD_init_Fun(void);
-void ACD_Fun(void);
-void PCD_ACD_AutoCalc(void);
-void PCD_ACD_Init(void);
-char PCD_IRQ(void);
+uint8_t si523_acd_irq_process(void);
+void si523_modify_reg(uint8_t reg_addr, bool set_bit, uint8_t mask_byte);
 
 #endif // SI523_H

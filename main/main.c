@@ -2,6 +2,9 @@
 
 static const char *TAG = "main";
 
+uint8_t g_uid[4];
+uint8_t g_uid_len = 4;
+
 uint8_t PCD_IRQ_flagA = 0;
 
 // 全局句柄
@@ -28,13 +31,13 @@ static void i2c_master_deinit(void)
 static void IRAM_ATTR si523_irq_handler(void *arg)
 {
     uint32_t gpio_num = (uint32_t)arg;
+    ESP_EARLY_LOGI(TAG, "GPIO %d interrupt triggered", gpio_num);
     if (gpio_num == SI523_INT_PIN)
     {
         BaseType_t xHigherPriorityTaskWoken = pdFALSE;
         if (si523_semaphore != NULL)
         {
             xSemaphoreGiveFromISR(si523_semaphore, &xHigherPriorityTaskWoken);
-            ESP_EARLY_LOGI(TAG, "GPIO %d interrupt triggered", gpio_num);
             PCD_IRQ_flagA = 1;
         }
         portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
@@ -100,31 +103,31 @@ void si523_task(void *arg)
                 // EXTI->IMR &= 0xFFFFFFF7; // Disable external interrupt
                 gpio_intr_disable(SI523_INT_PIN); // Disable GPIO interrupt
 
-                switch (PCD_IRQ())
+                switch (si523_acd_irq_process())
                 {
                 case 0: // Other_IRQ
                     ESP_LOGI(TAG, "Other_IRQ:Read UID and reconfigure the register");
                     // ESP_LOGI(TAG, "Other IRQ Occur");
-                    PCD_SI523_TypeA_GetUID();
-                    PcdReset(); // 软复位
-                    // Pcd_Hard_Reset(); // 硬复位
-                    PCD_SI523_TypeA_Init();
-                    PCD_ACD_Init();
+                    si523_type_a_init(); // 读A卡初始化配置
+                    si523_soft_reset(); // 软复位
+                    // si523_hard_reset(); // 硬复位
+                    si523_type_a_init();
+                    si523_acd_init();
                     break;
 
                 case 1: // ACD_IRQ
                     ESP_LOGI(TAG, "ACD_IRQ:Read UID and reconfigure the register");
-                    I_SI523_SiModifyReg(0x01, 0, 0x20); // Turn on the analog part of receiver
-                    PCD_SI523_TypeA_GetUID();
+                    si523_modify_reg(0x01, 0, 0x20); // Turn on the analog part of receiver
+                    si523_type_a_get_uid(g_uid, &g_uid_len);
                     si523_write_reg(SI523_REG_COMMAND, 0xb0); // 进入软掉电,重新进入ACD（ALPPL）
                     break;
 
                 case 2: // ACDTIMER_IRQ
                     ESP_LOGI(TAG, "ACDTIMER_IRQ:Reconfigure the register");
-                    PcdReset(); // 软复位
-                    // Pcd_Hard_Reset(); // 硬复位
-                    PCD_SI523_TypeA_Init();
-                    PCD_ACD_Init();
+                    si523_soft_reset(); // 软复位
+                    // si523_hard_reset(); // 硬复位
+                    si523_type_a_init();
+                    si523_acd_init();
                     break;
                 }
 
@@ -153,7 +156,7 @@ void app_main(void)
 
     si523_gpio_init(); // 初始化GPIO
 
-    Pcd_Hard_Reset(); // 硬复位
+    si523_hard_reset(); // 硬复位
 
     vTaskDelay(pdMS_TO_TICKS(500)); // 等待GPIO稳
 
@@ -163,8 +166,10 @@ void app_main(void)
 
     gpio_intr_disable(SI523_INT_PIN); // 先禁用中断，等任务准备好后再启用
 
-    ACD_init_Fun();
-    ACD_Fun();
+    si523_acd_start();
+
+    gpio_intr_enable(SI523_INT_PIN); // Enable GPIO interrupt
+    PCD_IRQ_flagA = 0;               // clear IRQ flag
 
     xTaskCreate(si523_task, "si523_task", 2048, NULL, 10, NULL);
 
