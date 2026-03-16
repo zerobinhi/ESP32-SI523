@@ -116,7 +116,7 @@ void si523_task(void *arg)
                     ESP_LOGI(TAG, "ACD_IRQ:Read UID and reconfigure the register");
                     I_SI523_SiModifyReg(0x01, 0, 0x20); // Turn on the analog part of receiver
                     PCD_SI523_TypeA_GetUID();
-                    si523_write_reg(CommandReg, 0xb0); // 进入软掉电,重新进入ACD（ALPPL）
+                    si523_write_reg(SI523_REG_COMMAND, 0xb0); // 进入软掉电,重新进入ACD（ALPPL）
                     break;
 
                 case 2: // ACDTIMER_IRQ
