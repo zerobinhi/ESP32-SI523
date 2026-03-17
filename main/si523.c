@@ -2,7 +2,6 @@
 
 static const char *TAG = "si523";
 
-extern uint8_t g_pcd_irq_flag_a;
 uint8_t g_acd_cfg_k_val;
 uint8_t g_acd_cfg_c_val;
 
@@ -67,7 +66,7 @@ void si523_hard_reset(void)
 
 void si523_soft_reset(void)
 {
-    uint32_t timeout = 100;
+    uint32_t timeout = 1000;
 
     si523_write_reg(SI523_REG_COMMAND, SI523_CMD_SOFT_RESET);
 
@@ -75,19 +74,13 @@ void si523_soft_reset(void)
     {
         vTaskDelay(pdMS_TO_TICKS(1));
     }
-    vTaskDelay(pdMS_TO_TICKS(1));
-}
 
-esp_err_t si523_init(void)
-{
-    uint8_t chip_version = si523_read_reg(SI523_REG_VERSION);
-    ESP_LOGI(TAG, "Si523 Chip Version: 0x%02x", chip_version);
-    return ESP_OK;
 }
 
 bool si523_check_chip(void)
 {
     uint8_t chip_version = si523_read_reg(SI523_REG_VERSION);
+    ESP_LOGI(TAG, "Si523 Chip Version: 0x%02x", chip_version);
     return (chip_version != 0x00 && chip_version != 0xFF);
 }
 
@@ -123,7 +116,7 @@ void si523_calculate_crc(uint8_t *in_buf, uint8_t data_len, uint8_t *out_buf)
 
     si523_clear_bit_mask(SI523_REG_DIV_IRQ, 0x04);
     si523_write_reg(SI523_REG_COMMAND, SI523_CMD_IDLE);
-    si523_set_bit_mask(SI523_REG_FIFO_LEVEL, 0x80);
+    si523_write_reg(SI523_REG_FIFO_LEVEL, 0x80);
 
     for (loop_cnt = 0; loop_cnt < data_len; loop_cnt++)
     {
@@ -135,7 +128,7 @@ void si523_calculate_crc(uint8_t *in_buf, uint8_t data_len, uint8_t *out_buf)
     do
     {
         irq_reg = si523_read_reg(SI523_REG_DIV_IRQ);
-        vTaskDelay(1);
+        vTaskDelay(pdMS_TO_TICKS(1));
         timeout--;
     } while ((timeout != 0) && !(irq_reg & 0x04));
 
@@ -169,7 +162,7 @@ static uint8_t si523_raw_cmd(uint8_t cmd, uint8_t *in_buf, uint8_t in_len, uint8
 
     si523_clear_bit_mask(SI523_REG_COM_IRQ, 0x80);
     si523_write_reg(SI523_REG_COMMAND, SI523_CMD_IDLE);
-    si523_set_bit_mask(SI523_REG_FIFO_LEVEL, 0x80); /* Flush FIFO */
+    si523_write_reg(SI523_REG_FIFO_LEVEL, 0x80); /* Flush FIFO */
 
     for (loop_cnt = 0; loop_cnt < in_len; loop_cnt++)
     {
@@ -186,7 +179,7 @@ static uint8_t si523_raw_cmd(uint8_t cmd, uint8_t *in_buf, uint8_t in_len, uint8
     do
     {
         reg_val = si523_read_reg(SI523_REG_COM_IRQ);
-        vTaskDelay(1);
+        vTaskDelay(pdMS_TO_TICKS(1));
         timeout--;
     } while ((timeout != 0) && !(reg_val & 0x01) && !(reg_val & wait_for));
 
@@ -443,9 +436,9 @@ void si523_type_a_init(void)
     si523_write_reg(SI523_REG_T_RELOAD_H, 0x03);
     si523_write_reg(SI523_REG_T_RELOAD_L, 0xE8);
 
-    si523_write_reg(SI523_REG_TX_AUTO, 0x40); /* Force 100% ASK */
-    si523_write_reg(SI523_REG_MODE, 0x3D);    /* CRC preset 0x6363 */
-    si523_write_reg(SI523_REG_COMMAND, 0x00); /* Idle */
+    si523_write_reg(SI523_REG_TX_AUTO, 0x40);           /* Force 100% ASK */
+    si523_write_reg(SI523_REG_MODE, 0x3D);              /* CRC preset 0x6363 */
+    si523_write_reg(SI523_REG_COMMAND, SI523_CMD_IDLE); /* Idle */
 
     si523_antenna_on();
 }
@@ -484,9 +477,10 @@ uint8_t si523_type_a_get_uid(uint8_t *uid, uint8_t *uid_len)
     uint8_t atqa[2];
     uint8_t uid_buf[12] = {0};
     uint8_t sak = 0;
-    uint8_t uid_offset = 0;
+    uint8_t offset = 0;
 
     ESP_LOGI(TAG, "Type A: Get UID");
+
     si523_write_reg(SI523_REG_RF_CFG, SI523_RF_CFG_DEFAULT);
 
     /* Request card with auto gain fallback */
@@ -503,62 +497,90 @@ uint8_t si523_type_a_get_uid(uint8_t *uid, uint8_t *uid_len)
             }
         }
     }
-    ESP_LOGI(TAG, "ATQA: %02x %02x", atqa[0], atqa[1]);
 
-    /* Anticollision Level 1 */
+    ESP_LOGI(TAG, "ATQA: %02X %02X", atqa[0], atqa[1]);
+
+    /* ========== Level 1 ========== */
     if (si523_anticollision(uid_buf, SI523_PICC_ANTICOLL1) != SI523_OK)
     {
         ESP_LOGE(TAG, "Anticoll L1 failed");
         return SI523_ERR;
     }
+
     if (si523_select_card(uid_buf, SI523_PICC_ANTICOLL1, &sak) != SI523_OK)
     {
         ESP_LOGE(TAG, "Select L1 failed");
         return SI523_ERR;
     }
-    ESP_LOGI(TAG, "SAK L1: 0x%02x", sak);
 
-    memcpy(uid, uid_buf, 4);
-    uid_offset = 4;
+    ESP_LOGI(TAG, "SAK L1: 0x%02X", sak);
 
-    /* Anticollision Level 2 (Cascade) */
+    /* 判断是否有 CT (0x88) */
+    if (uid_buf[0] == 0x88)
+    {
+        // 跳过 CT
+        memcpy(uid, &uid_buf[1], 3);
+        offset = 3;
+    }
+    else
+    {
+        memcpy(uid, &uid_buf[0], 4);
+        offset = 4;
+    }
+
+    /* ========== Level 2 ========== */
     if (sak & 0x04)
     {
         if (si523_anticollision(uid_buf + 4, SI523_PICC_ANTICOLL2) != SI523_OK)
         {
+            ESP_LOGE(TAG, "Anticoll L2 failed");
             return SI523_ERR;
         }
+
         if (si523_select_card(uid_buf + 4, SI523_PICC_ANTICOLL2, &sak) != SI523_OK)
         {
+            ESP_LOGE(TAG, "Select L2 failed");
             return SI523_ERR;
         }
-        ESP_LOGI(TAG, "SAK L2: 0x%02x", sak);
 
-        memcpy(uid + 3, uid_buf + 4, 4);
-        uid_offset = 7;
+        ESP_LOGI(TAG, "SAK L2: 0x%02X", sak);
 
-        /* Anticollision Level 3 (Double Cascade) */
+        if (uid_buf[4] == 0x88)
+        {
+            memcpy(uid + offset, &uid_buf[5], 3);
+            offset += 3;
+        }
+        else
+        {
+            memcpy(uid + offset, &uid_buf[4], 4);
+            offset += 4;
+        }
+
+        /* ========== Level 3 ========== */
         if (sak & 0x04)
         {
             if (si523_anticollision(uid_buf + 8, SI523_PICC_ANTICOLL3) != SI523_OK)
             {
+                ESP_LOGE(TAG, "Anticoll L3 failed");
                 return SI523_ERR;
             }
+
             if (si523_select_card(uid_buf + 8, SI523_PICC_ANTICOLL3, &sak) != SI523_OK)
             {
+                ESP_LOGE(TAG, "Select L3 failed");
                 return SI523_ERR;
             }
-            ESP_LOGI(TAG, "SAK L3: 0x%02x", sak);
 
-            memcpy(uid + 6, uid_buf + 8, 4);
-            uid_offset = 10;
+            ESP_LOGI(TAG, "SAK L3: 0x%02X", sak);
+
+            memcpy(uid + offset, &uid_buf[8], 4);
+            offset += 4;
         }
     }
 
-    *uid_len = uid_offset;
+    *uid_len = offset;
 
     ESP_LOGI(TAG, "UID (Len:%d):", *uid_len);
-
     ESP_LOG_BUFFER_HEX(TAG, uid, *uid_len);
 
     return SI523_OK;
@@ -714,7 +736,7 @@ uint8_t si523_identity_card_get_uid(uint8_t *uid, uint8_t *uid_len)
         return SI523_ERR;
     }
 
-    if (fifo_buf[8] == 0x90 || fifo_buf[9] == 0x00) // ???
+    if (fifo_buf[8] == 0x90 && fifo_buf[9] == 0x00) // ???
     {                                               /* Check SW1SW2 */
         memcpy(uid, fifo_buf, 8);
         *uid_len = 8;
@@ -740,18 +762,18 @@ void si523_acd_auto_calc(void)
 
     g_acd_cfg_c_val = 0x7F;
 
-    si523_write_reg(SI523_REG_TX_CONTROL, 0x83); // 打开天线
-    si523_set_bit_mask(SI523_REG_COMMAND, 0x06); // 开启ADC_EXCUTE
-    vTaskDelay(pdMS_TO_TICKS(1));
+    si523_write_reg(SI523_REG_TX_CONTROL, 0x83);              // 打开天线
+    si523_write_reg(SI523_REG_COMMAND, SI523_CMD_ADC_EXCUTE); // 开启ADC_EXCUTE
+    esp_rom_delay_us(200);
 
     /* 寻找最佳的参考电压 VCON */
-    for (int i = 7; i > 0; i--)
+    for (int i = 7; i >= 0; i--)
     {
-        // 间接寻址：写入K配置
+        // 写入配置
         si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_LPD_CFG1 << 2) | 0x40);
         si523_write_reg(SI523_REG_ACD_CFG, vcon_tr[i]);
 
-        // 间接寻址：准备读取G配置
+        // 准备读取配置
         si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_ADC_VAL << 2) | 0x40);
         avg_adc_val = si523_read_reg(SI523_REG_ACD_CFG);
 
@@ -767,8 +789,11 @@ void si523_acd_auto_calc(void)
             }
 
             avg_adc_val = (avg_adc_val + adc_sample) / 2;
-            vTaskDelay(pdMS_TO_TICKS(1));
+
+            esp_rom_delay_us(150);
         }
+
+        ESP_LOGI(TAG, "VCON_TR=0x%02x, Avg ADC Val=0x%02x", vcon_tr[i], avg_adc_val);
 
         // 比较并记录更小的值
         if (avg_adc_val != 0 && avg_adc_val != 0x7F)
@@ -797,7 +822,7 @@ void si523_acd_auto_calc(void)
             si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_ADC_VAL << 2) | 0x40);
             adc_sample = si523_read_reg(SI523_REG_ACD_CFG);
             avg_adc_val = (avg_adc_val + adc_sample) / 2;
-            vTaskDelay(pdMS_TO_TICKS(1));
+            esp_rom_delay_us(100);
         }
         tr_compare[j] = avg_adc_val;
     }
@@ -815,7 +840,7 @@ void si523_acd_auto_calc(void)
     si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_LPD_CFG1 << 2) | 0x40);
     ESP_LOGI(TAG, "ACD AutoCalc Final: CfgK=0x%02x, CfgC=0x%02x", g_acd_cfg_k_val, g_acd_cfg_c_val);
 
-    si523_set_bit_mask(SI523_REG_COMMAND, 0x06); // 关闭ADC_EXCUTE
+    si523_write_reg(SI523_REG_COMMAND, SI523_CMD_ADC_EXCUTE); // 关闭ADC_EXCUTE
 }
 
 void si523_acd_init(void)
@@ -854,6 +879,9 @@ void si523_acd_init(void)
 
 void si523_acd_start(void)
 {
+
+    si523_check_chip();
+
     si523_type_a_init(); // 读A卡初始化配置
 
     si523_acd_auto_calc(); // 自动获取阈值
@@ -868,13 +896,13 @@ uint8_t si523_acd_irq_process(void)
     if (div_irq_reg & 0x40)
     {
         si523_write_reg(SI523_REG_DIV_IRQ, 0x40); /* Clear ACDIRq */
-        return SI523_ERR_NO_TAG;
+        return 1;
     }
 
     if (div_irq_reg & 0x20)
     {
         si523_write_reg(SI523_REG_DIV_IRQ, 0x20); /* Clear ACDTIMER_IRQ */
-        return SI523_ERR;
+        return 2;
     }
 
     si523_write_reg(SI523_REG_DIV_IRQ, 0x60); /* Clear ACDIRq + WdtIRq */
@@ -884,5 +912,5 @@ uint8_t si523_acd_irq_process(void)
     si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_ACC_CFG << 2) | 0x40);
     si523_write_reg(SI523_REG_ACD_CFG, 0x55);
 
-    return SI523_OK;
+    return 0;
 }

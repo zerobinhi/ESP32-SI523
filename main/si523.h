@@ -175,7 +175,6 @@ extern i2c_master_bus_handle_t i2c_bus_handle;
 void si523_gpio_init(void);
 void si523_hard_reset(void);
 void si523_soft_reset(void);
-esp_err_t si523_init(void);
 bool si523_check_chip(void);
 
 // 寄存器基础操作
