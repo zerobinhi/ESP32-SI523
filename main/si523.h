@@ -92,7 +92,7 @@
 #define SI523_ACD_REG_RCCFG1 0x00     // 3K RC配置1
 #define SI523_ACD_REG_ACRDCFG 0x01    // 射频卡/场检测配置
 #define SI523_ACD_REG_MAN_REF 0x02    // 手动模式参考值
-#define SI523_ACD_REG_VAL_DELTA 0x03  // 场强变化阈值
+#define SI523_ACD_REG_VAL_DELTA 0x03  // 场强变化范围
 #define SI523_ACD_REG_ADC_CFG 0x04    // 轮询ADC配置
 #define SI523_ACD_REG_RCCFG2 0x05     // 3K RC配置2
 #define SI523_ACD_REG_ADC_VAL 0x06    // 轮询ADC采样值
