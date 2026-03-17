@@ -128,7 +128,7 @@
 #define SI523_ACD_ACRDCFG_DEFAULT 0xA8    // 相对值模式+下降检测+卡/场同时使能
 #define SI523_ACD_VAL_DELTA_DEFAULT 0x02  // 场强变化阈值
 #define SI523_ACD_WDT_CNT_DEFAULT 0x26    // 看门狗中断间隔
-#define SI523_ACD_ARI_CFG_DEFAULT 0x00    // ARI功能关闭
+#define SI523_ACD_ARI_CFG_DEFAULT 0x02    // ARI功能使能
 #define SI523_ACD_ACC_CFG_DEFAULT 0x55    // 配置监测关闭
 #define SI523_ACD_RF_LOW_DET_DEFAULT 0x01 // 低RF监测使能
 #define SI523_ACD_IRQ_EN_DEFAULT 0x00     // ACD中断全部关闭
