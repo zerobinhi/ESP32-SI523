@@ -468,273 +468,6 @@ void si523_type_b_init(void)
     si523_antenna_on();
 }
 
-#if 0
-char PCD_SI523_TypeA_GetUID(void)
-{
-    unsigned char ATQA[2];
-    unsigned char UID[12];
-    unsigned char SAK = 0;
-    unsigned char UID_complate1 = 0;
-    unsigned char UID_complate2 = 0;
-
-    ESP_LOGI(TAG, "Test_SI523_GetUID");
-    si523_write_reg(SI523_REG_RF_CFG, SI523_RF_CFG_DEFAULT); // 复位接收增益
-
-    // 寻卡
-    if (PcdRequest(SI523_PICC_REQ_IDL, ATQA) != SI523_OK) // 寻天线区内未进入休眠状态的卡，返回卡片类型 2字节
-    {
-        si523_write_reg(SI523_REG_RF_CFG, 0x48);
-        if (PcdRequest(SI523_PICC_REQ_IDL, ATQA) != SI523_OK)
-        {
-            si523_write_reg(SI523_REG_RF_CFG, 0x58);
-            if (PcdRequest(SI523_PICC_REQ_IDL, ATQA) != SI523_OK)
-            {
-                ESP_LOGI(TAG, "Request:fail");
-                return 1;
-            }
-            else
-            {
-                ESP_LOGI(TAG, "Request1:ok  ATQA:%02x %02x", ATQA[0], ATQA[1]);
-            }
-        }
-        else
-        {
-            ESP_LOGI(TAG, "Request2:ok  ATQA:%02x %02x", ATQA[0], ATQA[1]);
-        }
-    }
-    else
-    {
-        ESP_LOGI(TAG, "Request3:ok  ATQA:%02x %02x", ATQA[0], ATQA[1]);
-    }
-
-    // UID长度=4
-    // Anticoll 冲突检测 level1
-    if (PcdAnticoll(UID, SI523_PICC_ANTICOLL1) != SI523_OK)
-    {
-        ESP_LOGI(TAG, "Anticoll1:fail");
-        return 1;
-    }
-    else
-    {
-        if (PcdSelect1(UID, &SAK) != SI523_OK)
-        {
-            ESP_LOGI(TAG, "Select1:fail");
-            return 1;
-        }
-        else
-        {
-            ESP_LOGI(TAG, "Select1:ok  SAK1:%02x", SAK);
-            if (SAK & 0x04)
-            {
-                UID_complate1 = 0;
-
-                // UID长度=7
-                if (UID_complate1 == 0)
-                {
-                    // Anticoll 冲突检测 level2
-                    if (PcdAnticoll(UID + 4, SI523_PICC_ANTICOLL2) != SI523_OK)
-                    {
-                        ESP_LOGI(TAG, "Anticoll2:fail");
-                        return 1;
-                    }
-                    else
-                    {
-                        if (PcdSelect2(UID + 4, &SAK) != SI523_OK)
-                        {
-                            ESP_LOGI(TAG, "Select2:fail");
-                            return 1;
-                        }
-                        else
-                        {
-                            ESP_LOGI(TAG, "Select2:ok  SAK2:%02x", SAK);
-                            if (SAK & 0x04)
-                            {
-                                UID_complate2 = 0;
-
-                                // UID长度=10
-                                if (UID_complate2 == 0)
-                                {
-                                    // Anticoll 冲突检测 level3
-                                    if (PcdAnticoll(UID + 8, SI523_PICC_ANTICOLL3) != SI523_OK)
-                                    {
-                                        ESP_LOGI(TAG, "Anticoll3:fail");
-                                        return 1;
-                                    }
-                                    else
-                                    {
-                                        if (PcdSelect3(UID + 8, &SAK) != SI523_OK)
-                                        {
-                                            ESP_LOGI(TAG, "Select3:fail");
-                                            return 1;
-                                        }
-                                        else
-                                        {
-                                            ESP_LOGI(TAG, "Select3:ok  SAK3:%02x", SAK);
-                                            if (SAK & 0x04)
-                                            {
-                                                //												UID_complate3 = 0;
-                                            }
-                                            else
-                                            {
-                                                //											UID_complate3 = 1;
-                                                ESP_LOGI(TAG, "Anticoll3:ok  UID:%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
-                                                         UID[1], UID[2], UID[3], UID[5], UID[6], UID[7], UID[8], UID[9], UID[10], UID[11]);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            else
-                            {
-                                UID_complate2 = 1;
-                                ESP_LOGI(TAG, "Anticoll2:ok  UID:%02x %02x %02x %02x %02x %02x %02x",
-                                         UID[1], UID[2], UID[3], UID[4], UID[5], UID[6], UID[7]);
-                            }
-                        }
-                    }
-                }
-            }
-            else
-            {
-                UID_complate1 = 1;
-                ESP_LOGI(TAG, "Anticoll1:ok  UID:%02x %02x %02x %02x", UID[0], UID[1], UID[2], UID[3]);
-            }
-        }
-    }
-    // Halt
-    //	if(PcdHalt() != SI523_OK)
-    //	{
-    //		ESP_LOGI(TAG, "Halt:fail");
-    //		return 1;
-    //	}
-    //	else
-    //	{
-    //		ESP_LOGI(TAG, "Halt:ok");
-    //	}
-
-    // delay_us(100);
-    vTaskDelay(pdMS_TO_TICKS(1));
-    return 0;
-}
-
-char PCD_SI523_TypeB_GetUID(void)
-{
-
-    ESP_LOGI(TAG, "Test_B_GetUID");
-
-    // si523_write_reg(0x02, 0xa0); //打开接收中断,则读卡会产生中断
-    //  Enable external interrupt
-    // EXTI->IMR |= 0x00000008;
-
-    // request 寻B卡;返回卡号
-    uint32_t len1;
-    unsigned char buf1[18] = {0x05, 0x00, 0x00, 0x71, 0xFF};
-
-    if (si523_transceive(SI523_CMD_TRANSCEIVE, buf1, 5, buf1, &len1) != SI523_OK)
-    {
-        ESP_LOGI(TAG, "Request:fail");
-        return 1;
-    }
-    else
-    {
-        if (buf1[0] == 0x50) // 判断是不是ATQB
-            ESP_LOGI(TAG, "Request:ok  UID:%02x %02x %02x %02x",
-                     buf1[1], buf1[2], buf1[3], buf1[4]);
-    }
-
-    return 0;
-}
-
-/*===============================
- 函数功能：自动获取阈值
-
- ================================*/
-void PCD_ACD_AutoCalc(void)
-{
-    unsigned char temp;
-    unsigned char temp_Compare = 0;
-    unsigned char VCON_TR[8] = {0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f}; // acd灵敏度调节
-    unsigned char TR_Compare[4] = {0x00, 0x00, 0x00, 0x00};
-    g_acd_cfg_c_val = 0x7f;
-    unsigned char ACDConfigRegK_RealVal = 0;
-
-    si523_write_reg(SI523_REG_TX_CONTROL, 0x83); // 打开天线
-    si523_set_bit_mask(SI523_REG_COMMAND, 0x06); // 开启ADC_EXCUTE
-    // delay_us(200);
-    vTaskDelay(pdMS_TO_TICKS(1));
-
-    for (int i = 7; i > 0; i--)
-    {
-        si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_LPD_CFG1 << 2) | 0x40);
-        si523_write_reg(SI523_REG_ACD_CFG, VCON_TR[i]);
-
-        si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_ADC_VAL << 2) | 0x40);
-        temp_Compare = si523_read_reg(SI523_REG_ACD_CFG);
-        for (int m = 0; m < 100; m++)
-        {
-            si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_ADC_VAL << 2) | 0x40);
-            temp = si523_read_reg(SI523_REG_ACD_CFG);
-
-            if (temp == 0)
-                break; // 处在接近的VCON值附近值，如果偶合出现0值，均有概率误触发，应舍弃该值。
-
-            temp_Compare = (temp_Compare + temp) / 2;
-            // delay_us(100);
-            vTaskDelay(pdMS_TO_TICKS(1));
-        }
-
-        if (temp_Compare == 0 || temp_Compare == 0x7f) // 比较当前值和所存值
-        {
-        }
-        else
-        {
-            if (temp_Compare < g_acd_cfg_c_val)
-            {
-                g_acd_cfg_c_val = temp_Compare;
-                g_acd_cfg_k_val = VCON_TR[i];
-            }
-        }
-    } // 取得最接近的参考电压VCON
-
-    ACDConfigRegK_RealVal = g_acd_cfg_k_val; // 取得最接近的参考电压VCON
-
-    for (int j = 0; j < 4; j++)
-    {
-        si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_LPD_CFG1 << 2) | 0x40);
-        si523_write_reg(SI523_REG_ACD_CFG, j * 32 + g_acd_cfg_k_val);
-
-        si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_ADC_VAL << 2) | 0x40);
-        temp_Compare = si523_read_reg(SI523_REG_ACD_CFG);
-        for (int n = 0; n < 100; n++)
-        {
-            si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_ADC_VAL << 2) | 0x40);
-            temp = si523_read_reg(SI523_REG_ACD_CFG);
-            temp_Compare = (temp_Compare + temp) / 2;
-            // delay_us(100);
-            vTaskDelay(pdMS_TO_TICKS(1));
-        }
-        TR_Compare[j] = temp_Compare;
-    } // 再调TR的档位，将采集值填入TR_Compare[]
-
-    for (int z = 0; z < 3; z++)
-    {
-        if (TR_Compare[z] == 0x7f)
-        {
-        }
-        else
-        {
-            g_acd_cfg_c_val = TR_Compare[z]; // 最终选择的配置
-            g_acd_cfg_k_val = ACDConfigRegK_RealVal + z * 32;
-        }
-    } // 再选出一个非7f大值
-
-    si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_LPD_CFG1 << 2) | 0x40);
-    ESP_LOGI(TAG, "g_acd_cfg_k_val:%02x ", g_acd_cfg_k_val);
-
-    si523_set_bit_mask(SI523_REG_COMMAND, 0x06); // 关闭ADC_EXCUTE
-}
-
-#endif
 uint8_t si523_type_a_get_uid(uint8_t *uid, uint8_t *uid_len)
 {
     uint8_t atqa[2];
@@ -745,7 +478,7 @@ uint8_t si523_type_a_get_uid(uint8_t *uid, uint8_t *uid_len)
     ESP_LOGI(TAG, "Type A: Get UID");
     si523_write_reg(SI523_REG_RF_CFG, SI523_RF_CFG_DEFAULT);
 
-    /* 1. Request card with auto gain fallback */
+    /* Request card with auto gain fallback */
     if (si523_request(SI523_PICC_REQ_IDL, atqa) != SI523_OK)
     {
         si523_set_rx_gain(SI523_RX_GAIN_33DB);
@@ -761,7 +494,7 @@ uint8_t si523_type_a_get_uid(uint8_t *uid, uint8_t *uid_len)
     }
     ESP_LOGI(TAG, "ATQA: %02x %02x", atqa[0], atqa[1]);
 
-    /* 2. Anticollision Level 1 */
+    /* Anticollision Level 1 */
     if (si523_anticollision(uid_buf, SI523_PICC_ANTICOLL1) != SI523_OK)
     {
         ESP_LOGE(TAG, "Anticoll L1 failed");
@@ -777,7 +510,7 @@ uint8_t si523_type_a_get_uid(uint8_t *uid, uint8_t *uid_len)
     memcpy(uid, uid_buf, 4);
     uid_offset = 4;
 
-    /* 3. Anticollision Level 2 (Cascade) */
+    /* Anticollision Level 2 (Cascade) */
     if (sak & 0x04)
     {
         uid[0] = 0x88; /* Cascade tag */
@@ -795,7 +528,7 @@ uint8_t si523_type_a_get_uid(uint8_t *uid, uint8_t *uid_len)
         memcpy(uid + 3, uid_buf + 4, 4);
         uid_offset = 7;
 
-        /* 4. Anticollision Level 3 (Double Cascade) */
+        /* Anticollision Level 3 (Double Cascade) */
         if (sak & 0x04)
         {
             if (si523_anticollision(uid_buf + 8, SI523_PICC_ANTICOLL3) != SI523_OK)
@@ -1002,168 +735,93 @@ static uint8_t si523_read_acd_reg(uint8_t sub_reg)
     return si523_read_reg(SI523_REG_ACD_CFG);
 }
 
-#if 0
 void si523_acd_auto_calc(void)
 {
-    uint8_t adc_val;
-    uint8_t avg_adc_val;
-    uint8_t vcon_tr_table[8] = {0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F};
-    uint8_t tr_compare_table[4] = {0x00, 0x00, 0x00, 0x00};
+    uint8_t adc_sample;
+    uint8_t avg_adc_val = 0;
+    uint8_t vcon_tr[8] = {0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F}; // ACD灵敏度调节
+    uint8_t tr_compare[4] = {0x00, 0x00, 0x00, 0x00};
     uint8_t cfg_k_real_val = 0;
-    int vcon_idx;
-    int avg_loop;
-    int tr_idx;
-    int final_tr_idx;
 
     g_acd_cfg_c_val = 0x7F;
 
-    si523_write_reg(SI523_REG_TX_CONTROL, 0x83);
-    si523_set_bit_mask(SI523_REG_COMMAND, 0x06); /* ADC_EXECUTE */
+    si523_write_reg(SI523_REG_TX_CONTROL, 0x83); // 打开天线
+    si523_set_bit_mask(SI523_REG_COMMAND, 0x06); // 开启ADC_EXCUTE
     vTaskDelay(pdMS_TO_TICKS(1));
 
-    /* Find optimal VCON */
-    for (vcon_idx = 7; vcon_idx > 0; vcon_idx--)
+    /* 寻找最佳的参考电压 VCON */
+    for (int i = 7; i > 0; i--)
     {
-        si523_write_acd_reg(SI523_ACD_REG_LPD_CFG1, vcon_tr_table[vcon_idx]);
-        (void)si523_read_acd_reg(SI523_ACD_REG_ADC_VAL); /* Discard first read */
-        avg_adc_val = si523_read_acd_reg(SI523_ACD_REG_ADC_VAL);
+        // 间接寻址：写入K配置
+        si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_LPD_CFG1 << 2) | 0x40);
+        si523_write_reg(SI523_REG_ACD_CFG, vcon_tr[i]);
 
-        for (avg_loop = 0; avg_loop < 100; avg_loop++)
+        // 间接寻址：准备读取G配置
+        si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_ADC_VAL << 2) | 0x40);
+        avg_adc_val = si523_read_reg(SI523_REG_ACD_CFG);
+
+        for (int m = 0; m < 100; m++)
         {
-            adc_val = si523_read_acd_reg(SI523_ACD_REG_ADC_VAL);
-            if (adc_val == 0)
+            // 必须每次循环都重置选择寄存器
+            si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_ADC_VAL << 2) | 0x40);
+            adc_sample = si523_read_reg(SI523_REG_ACD_CFG);
+
+            if (adc_sample == 0)
             {
-                break;
+                break; // 处于临界值，容易误触发，舍弃该值
             }
-            avg_adc_val = (avg_adc_val + adc_val) / 2;
+
+            avg_adc_val = (avg_adc_val + adc_sample) / 2;
             vTaskDelay(pdMS_TO_TICKS(1));
         }
 
+        // 比较并记录更小的值
         if (avg_adc_val != 0 && avg_adc_val != 0x7F)
         {
             if (avg_adc_val < g_acd_cfg_c_val)
             {
                 g_acd_cfg_c_val = avg_adc_val;
-                g_acd_cfg_k_val = vcon_tr_table[vcon_idx];
+                g_acd_cfg_k_val = vcon_tr[i];
             }
         }
     }
+
     cfg_k_real_val = g_acd_cfg_k_val;
 
-    /* Find optimal TR */
-    for (tr_idx = 0; tr_idx < 4; tr_idx++)
-    {
-        si523_write_acd_reg(SI523_ACD_REG_LPD_CFG1, tr_idx * 32 + cfg_k_real_val);
-        avg_adc_val = si523_read_acd_reg(SI523_ACD_REG_ADC_VAL);
-
-        for (avg_loop = 0; avg_loop < 100; avg_loop++)
-        {
-            adc_val = si523_read_acd_reg(SI523_ACD_REG_ADC_VAL);
-            avg_adc_val = (avg_adc_val + adc_val) / 2;
-            vTaskDelay(pdMS_TO_TICKS(1));
-        }
-        tr_compare_table[tr_idx] = avg_adc_val;
-    }
-
-    for (final_tr_idx = 0; final_tr_idx < 3; final_tr_idx++)
-    {
-        if (tr_compare_table[final_tr_idx] != 0x7F)
-        {
-            g_acd_cfg_c_val = tr_compare_table[final_tr_idx];
-            g_acd_cfg_k_val = cfg_k_real_val + final_tr_idx * 32;
-        }
-    }
-
-    ESP_LOGI(TAG, "ACD AutoCalc: CfgK=0x%02x, CfgC=0x%02x", g_acd_cfg_k_val, g_acd_cfg_c_val);
-    si523_clear_bit_mask(SI523_REG_COMMAND, 0x06);
-}
-
-#else
-void si523_acd_auto_calc(void)
-{
-    unsigned char temp;
-    unsigned char temp_Compare = 0;
-    unsigned char VCON_TR[8] = {0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f}; // acd灵敏度调节
-    unsigned char TR_Compare[4] = {0x00, 0x00, 0x00, 0x00};
-    g_acd_cfg_c_val = 0x7f;
-    unsigned char ACDConfigRegK_RealVal = 0;
-
-    si523_write_reg(SI523_REG_TX_CONTROL, 0x83); // 打开天线
-    si523_set_bit_mask(SI523_REG_COMMAND, 0x06); // 开启ADC_EXCUTE
-    // delay_us(200);
-    vTaskDelay(pdMS_TO_TICKS(1));
-
-    for (int i = 7; i > 0; i--)
-    {
-        si523_write_reg(ACDConfigSelReg, (ACDConfigK << 2) | 0x40);
-        si523_write_reg(ACDConfigReg, VCON_TR[i]);
-
-        si523_write_reg(ACDConfigSelReg, (ACDConfigG << 2) | 0x40);
-        temp_Compare = si523_read_reg(ACDConfigReg);
-        for (int m = 0; m < 100; m++)
-        {
-            si523_write_reg(ACDConfigSelReg, (ACDConfigG << 2) | 0x40);
-            temp = si523_read_reg(ACDConfigReg);
-
-            if (temp == 0)
-                break; // 处在接近的VCON值附近值，如果偶合出现0值，均有概率误触发，应舍弃该值。
-
-            temp_Compare = (temp_Compare + temp) / 2;
-            // delay_us(100);
-            vTaskDelay(pdMS_TO_TICKS(1));
-        }
-
-        if (temp_Compare == 0 || temp_Compare == 0x7f) // 比较当前值和所存值
-        {
-        }
-        else
-        {
-            if (temp_Compare < g_acd_cfg_c_val)
-            {
-                g_acd_cfg_c_val = temp_Compare;
-                g_acd_cfg_k_val = VCON_TR[i];
-            }
-        }
-    } // 取得最接近的参考电压VCON
-
-    ACDConfigRegK_RealVal = g_acd_cfg_k_val; // 取得最接近的参考电压VCON
-
+    /* 微调 TR 档位 */
     for (int j = 0; j < 4; j++)
     {
-        si523_write_reg(ACDConfigSelReg, (ACDConfigK << 2) | 0x40);
-        si523_write_reg(ACDConfigReg, j * 32 + g_acd_cfg_k_val);
+        si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_LPD_CFG1 << 2) | 0x40);
+        si523_write_reg(SI523_REG_ACD_CFG, (j * 32) + g_acd_cfg_k_val);
 
-        si523_write_reg(ACDConfigSelReg, (ACDConfigG << 2) | 0x40);
-        temp_Compare = si523_read_reg(ACDConfigReg);
+        si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_ADC_VAL << 2) | 0x40);
+        avg_adc_val = si523_read_reg(SI523_REG_ACD_CFG);
+
         for (int n = 0; n < 100; n++)
         {
-            si523_write_reg(ACDConfigSelReg, (ACDConfigG << 2) | 0x40);
-            temp = si523_read_reg(ACDConfigReg);
-            temp_Compare = (temp_Compare + temp) / 2;
-            // delay_us(100);
+            si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_ADC_VAL << 2) | 0x40);
+            adc_sample = si523_read_reg(SI523_REG_ACD_CFG);
+            avg_adc_val = (avg_adc_val + adc_sample) / 2;
             vTaskDelay(pdMS_TO_TICKS(1));
         }
-        TR_Compare[j] = temp_Compare;
-    } // 再调TR的档位，将采集值填入TR_Compare[]
+        tr_compare[j] = avg_adc_val;
+    }
 
+    /* 选出最终非0x7F的大值配置 */
     for (int z = 0; z < 3; z++)
     {
-        if (TR_Compare[z] == 0x7f)
+        if (tr_compare[z] != 0x7F)
         {
+            g_acd_cfg_c_val = tr_compare[z];
+            g_acd_cfg_k_val = cfg_k_real_val + (z * 32);
         }
-        else
-        {
-            g_acd_cfg_c_val = TR_Compare[z]; // 最终选择的配置
-            g_acd_cfg_k_val = ACDConfigRegK_RealVal + z * 32;
-        }
-    } // 再选出一个非7f大值
+    }
 
-    si523_write_reg(ACDConfigSelReg, (ACDConfigK << 2) | 0x40);
-    ESP_LOGI(TAG, "g_acd_cfg_k_val:%02x ", g_acd_cfg_k_val);
+    si523_write_reg(SI523_REG_PAGE2, (SI523_ACD_REG_LPD_CFG1 << 2) | 0x40);
+    ESP_LOGI(TAG, "ACD AutoCalc Final: CfgK=0x%02x, CfgC=0x%02x", g_acd_cfg_k_val, g_acd_cfg_c_val);
 
     si523_set_bit_mask(SI523_REG_COMMAND, 0x06); // 关闭ADC_EXCUTE
 }
-#endif
 
 void si523_acd_init(void)
 {
