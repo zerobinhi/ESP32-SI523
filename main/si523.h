@@ -3,6 +3,9 @@
 
 #include <esp_log.h>
 #include <esp_err.h>
+#include <esp_system.h>
+#include <string.h>
+#include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <driver/gpio.h>
@@ -145,7 +148,7 @@
 // -------------------------- 状态与错误码定义 --------------------------
 #define SI523_OK 0         // 操作成功
 #define SI523_ERR_NO_TAG 1 // 未检测到卡片
-#define SI523_ERR 2        // 通用错误
+#define SI523_ERR 2        // 错误
 #define SI523_ERR_COMM 3   // 通信失败
 #define SI523_ERR_CRC 4    // CRC校验错误
 #define SI523_ERR_AUTH 5   // 密钥验证失败
@@ -206,13 +209,12 @@ void si523_type_b_init(void);
 uint8_t si523_type_a_get_uid(uint8_t *uid, uint8_t *uid_len);
 uint8_t si523_type_b_get_uid(uint8_t *uid, uint8_t *uid_len);
 uint8_t si523_identity_card_get_uid(uint8_t *uid, uint8_t *uid_len);
+uint8_t si523_type_a_rw_block_test(void);
 
 // ACD低功耗功能
 void si523_acd_auto_calc(void);
-void si523_acd_config(void);
 void si523_acd_init(void);
 void si523_acd_start(void);
 uint8_t si523_acd_irq_process(void);
-void si523_modify_reg(uint8_t reg_addr, bool set_bit, uint8_t mask_byte);
 
 #endif // SI523_H
