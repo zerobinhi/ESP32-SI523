@@ -1,3 +1,3 @@
-idf_component_register(SRCS "main.c" "si523.c"
-                       PRIV_REQUIRES driver
+idf_component_register(SRCS "main.c"
+                       PRIV_REQUIRES
                        INCLUDE_DIRS "")

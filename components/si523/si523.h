@@ -14,12 +14,12 @@
 #include <freertos/task.h>
 
 // -------------------------- 引脚与 I2C 配置 --------------------------
-#define SI523_RST_PIN 21
-#define SI523_INT_PIN 15
+#define SI523_RST_PIN 14
+#define SI523_INT_PIN 4
 
 #define I2C_MASTER_NUM I2C_NUM_0
-#define I2C_MASTER_SCL_IO 18
-#define I2C_MASTER_SDA_IO 19
+#define I2C_MASTER_SCL_IO 22
+#define I2C_MASTER_SDA_IO 21
 #define I2C_MASTER_FREQ_HZ 100000
 #define SI523_I2C_ADDR 0x28
 
